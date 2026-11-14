@@ -67,7 +67,13 @@ const App = (() => {
 
   // ---------------------------------------------------------------- 블록 색상
   const COLORS = [
+    ["water_cauldron", "#3a3a3e"], ["lava_cauldron", "#3a3a3e"], ["cauldron", "#3a3a3e"],
     ["water", "#3f76e4"], ["lava", "#e5641c"], ["glass", "#bfe3ec"], ["iron_bars", "#8c8f93"],
+    ["calcite", "#e3e1da"], ["white_terracotta", "#d6c2b3"], ["deepslate_tile", "#3e4553"],
+    ["mossy", "#6c7a55"], ["cracked_stone", "#767676"], ["campfire", "#7a5a36"],
+    ["red_bed", "#a12722"], ["bookshelf", "#7b5a36"], ["anvil", "#47474b"], ["grindstone", "#8a8a8a"],
+    ["blast_furnace", "#5a5a5e"], ["smoker", "#5e4d3c"], ["smithing", "#3c3b4a"], ["dirt_path", "#947a45"],
+    ["potted", "#c2412d"],
     ["torch", "#ffcf4a"], ["lantern", "#f2b63c"], ["ladder", "#a07c45"],
     ["red_wool", "#b02e26"], ["white_wool", "#e9ecec"], ["wool", "#d8d8d8"],
     ["moss", "#5a7d2b"], ["azalea", "#6c9b35"], ["leaves", "#3f7a2a"], ["grass", "#6aa84f"],

@@ -9,7 +9,10 @@
 방향 규칙: 템플릿의 정면(입구)은 z = 0 쪽이며 북쪽(-z)을 바라본다.
 플러그인은 플레이어가 바라보는 방향에 맞춰 회전해서 짓는다.
 """
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 
 MAX_SIZE = 128
 MAX_BLOCKS = 200_000
@@ -17,8 +20,39 @@ MAX_PALETTE = 1024
 BLOCK_RE = re.compile(r"^minecraft:[a-z0-9_]+(\[[a-z0-9_]+=[a-z0-9_]+(,[a-z0-9_]+=[a-z0-9_]+)*\])?$")
 
 
+BLOCKS_FILE = Path(__file__).resolve().parent.parent / "data" / "blocks-26.3.json"
+
+
 class TemplateError(ValueError):
     pass
+
+
+@lru_cache(maxsize=1)
+def block_registry():
+    """Paper 26.3 블록 목록 (바닐라 server.jar --reports 로 생성). 없으면 None → 형식만 검사."""
+    try:
+        return json.loads(BLOCKS_FILE.read_text(encoding="utf-8"))["blocks"]
+    except FileNotFoundError:
+        return None
+
+
+def check_block(text):
+    """'minecraft:oak_stairs[facing=north]' 가 26.3 에 실제로 있는 블록/속성/값인지 확인."""
+    reg = block_registry()
+    if reg is None:
+        return
+    bid, _, rest = text.partition("[")
+    info = reg.get(bid)
+    if info is None:
+        raise TemplateError(f"26.3 에 없는 블록입니다: {bid}")
+    if rest:
+        for pair in rest.rstrip("]").split(","):
+            key, _, value = pair.partition("=")
+            allowed = info["properties"].get(key)
+            if allowed is None:
+                raise TemplateError(f"{bid} 에는 '{key}' 속성이 없습니다.")
+            if value not in allowed:
+                raise TemplateError(f"{bid} 의 {key} 값은 {', '.join(allowed)} 중 하나여야 합니다: {value}")
 
 
 def _is_int(v):
@@ -41,6 +75,7 @@ def validate(data):
     for p in palette:
         if not isinstance(p, str) or not BLOCK_RE.match(p):
             raise TemplateError(f"잘못된 블록 이름: {p!r}")
+        check_block(p)
     if not isinstance(blocks, list) or not 1 <= len(blocks) <= MAX_BLOCKS:
         raise TemplateError(f"blocks는 1~{MAX_BLOCKS}개여야 합니다.")
 

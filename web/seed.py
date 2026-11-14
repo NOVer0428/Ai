@@ -2,12 +2,14 @@
 
 
 class Builder:
-    def __init__(self, sx, sy, sz):
-        self.size = [sx, sy, sz]
+    """size 를 주면 그 범위 밖은 버리고, 생략하면 음수 좌표도 허용한 뒤 build() 때 0 기준으로 옮긴다."""
+
+    def __init__(self, sx=None, sy=None, sz=None):
+        self.size = [sx, sy, sz] if sx is not None else None
         self.cells = {}
 
     def set(self, x, y, z, block):
-        if 0 <= x < self.size[0] and 0 <= y < self.size[1] and 0 <= z < self.size[2]:
+        if self.size is None or (0 <= x < self.size[0] and 0 <= y < self.size[1] and 0 <= z < self.size[2]):
             if block is None:
                 self.cells.pop((x, y, z), None)
             else:
@@ -31,13 +33,19 @@ class Builder:
         self.set(x, y + 1, z, f"minecraft:{wood}_door[facing={facing},half=upper,hinge=left,open=false]")
 
     def build(self):
+        size = self.size
+        ox = oy = oz = 0
+        if size is None:
+            xs, ys, zs = zip(*self.cells)
+            ox, oy, oz = min(xs), min(ys), min(zs)
+            size = [max(xs) - ox + 1, max(ys) - oy + 1, max(zs) - oz + 1]
         palette, index, blocks = [], {}, []
         for (x, y, z), b in sorted(self.cells.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
             if b not in index:
                 index[b] = len(palette)
                 palette.append(b)
-            blocks.append([x, y, z, index[b]])
-        return {"size": self.size, "palette": palette, "blocks": blocks}
+            blocks.append([x - ox, y - oy, z - oz, index[b]])
+        return {"size": size, "palette": palette, "blocks": blocks}
 
 
 def cottage():
@@ -133,7 +141,9 @@ def garden_gazebo():
 
 
 def seed_templates():
-    return [
+    from seed_medieval import medieval_templates
+
+    return medieval_templates() + [
         {"name": "아늑한 오두막", "category": "주거",
          "description": "참나무와 가문비나무 지붕으로 만든 1인용 오두막. 작업대와 화로 포함.",
          "data": cottage()},
