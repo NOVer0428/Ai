@@ -189,7 +189,7 @@ const App = (() => {
 
   function cardHTML(t, { showSave = true } = {}) {
     return `<div class="card" data-id="${t.id}">
-      <a href="/template?id=${t.id}"><canvas data-preview="${t.id}"></canvas></a>
+      <a href="/template?id=${t.id}" class="thumb-link">${thumbHTML(t)}</a>
       <div class="body">
         <span class="tag">${esc(t.category)}</span>
         <h3><a href="/template?id=${t.id}" style="text-decoration:none">${esc(t.name)}</a></h3>
@@ -197,6 +197,13 @@ const App = (() => {
         <p class="desc">${esc(t.description)}</p>
         ${showSave ? `<div class="actions">${saveButton(t)}</div>` : ""}
       </div></div>`;
+  }
+
+  // 실제 블록 텍스처 썸네일 (서버 렌더링). 에셋이 없거나 실패하면 단순 미리보기 캔버스로 대체
+  function thumbHTML(t) {
+    if (!t.thumbnail) return `<canvas data-preview="${t.id}"></canvas>`;
+    return `<img class="thumb" src="${t.thumbnail}" alt="${esc(t.name)} 미리보기" loading="lazy"
+      onerror="this.outerHTML='<canvas data-preview=&quot;${t.id}&quot;></canvas>'; App.observePreviews(document)">`;
   }
 
   function saveButton(t) {

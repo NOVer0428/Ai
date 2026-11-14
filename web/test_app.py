@@ -102,6 +102,17 @@ class FlowTest(unittest.TestCase):
         r = self.c.post("/api/auth/login", json={"username": "BUILDER3", "password": "password123"})
         self.assertEqual(r.status_code, 200)
 
+    @unittest.skipUnless(__import__("thumbnail").available(), "블록 에셋 없음 (tools/fetch_assets.py)")
+    def test_thumbnail(self):
+        tid = self.c.get("/api/templates").json["templates"][0]["id"]
+        for q in ("", "?rot=1", "?maxY=2"):
+            r = self.c.get(f"/api/templates/{tid}/thumbnail.png{q}")
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.data.startswith(b"\x89PNG"))
+        r = self.c.get("/api/blocks/icon.png?state=minecraft:oak_stairs")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.c.get("/api/blocks/icon.png?state=../../app").status_code, 404)
+
     def test_form_post_rejected(self):
         r = self.c.post("/api/auth/login", data={"username": "a", "password": "b"})
         self.assertEqual(r.status_code, 415)

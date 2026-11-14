@@ -9,11 +9,12 @@ import uuid as uuidlib
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory, session
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from template_format import TemplateError, validate
+import thumbnail
+from template_format import TemplateError, normalize, validate
 
 BASE = Path(__file__).parent
 INSTANCE = BASE / "instance"
@@ -111,6 +112,7 @@ def template_summary(row, saved=None):
         "author": row["author"] if "author" in row.keys() else None,
         "saves": row["saves"] if "saves" in row.keys() else 0,
         "createdAt": row["created_at"],
+        "thumbnail": f"/api/templates/{row['id']}/thumbnail.png" if thumbnail.available() else None,
     }
     if saved is not None:
         out["saved"] = saved
@@ -222,6 +224,59 @@ def get_template(tid):
     return jsonify(out)
 
 
+@app.get("/api/templates/<int:tid>/thumbnail.png")
+def template_thumbnail(tid):
+    """실제 블록 텍스처로 그린 썸네일. ?rot=0~3 (보는 방향), ?maxY= (그 높이까지만)"""
+    if not thumbnail.available():
+        return err("썸네일용 블록 에셋이 없습니다. tools/fetch_assets.py 를 실행하세요.", 404)
+    row = db.get_db().execute("SELECT data FROM templates WHERE id = ?", (tid,)).fetchone()
+    if row is None:
+        return err("템플릿을 찾을 수 없습니다.", 404)
+    rot = request.args.get("rot", 0, type=int) % 4
+    max_y = request.args.get("maxY", type=int)
+    path = thumbnail.thumbnail_path(tid, row["data"], rot, max_y)
+    resp = send_file(path, mimetype="image/png", conditional=True, max_age=0)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/api/blocks/icon.png")
+def block_icon():
+    """?state=minecraft:oak_stairs[...] → 그 블록의 실제 텍스처 (첫 프레임)."""
+    if not thumbnail.available():
+        return err("아이콘이 없습니다.", 404)
+    try:
+        state = normalize(request.args.get("state", ""))  # 26.3 에 있는 블록만, 전체 상태로
+    except TemplateError:
+        return err("아이콘이 없습니다.", 404)
+    path = thumbnail.icon_texture(state)
+    if path is None or not path.resolve().is_relative_to(thumbnail.ASSETS.resolve()):
+        return err("아이콘이 없습니다.", 404)
+    img = thumbnail.texture(path.relative_to(thumbnail.ASSETS / "textures").with_suffix("").as_posix())
+    if img is None:
+        return err("아이콘이 없습니다.", 404)
+    import io
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    resp = send_file(buf, mimetype="image/png", max_age=86400)
+    return resp
+
+
+def prerender_thumbnails():
+    """서버 시작 시 모든 템플릿의 기본 썸네일을 미리 그려둔다 (백그라운드)."""
+    if not thumbnail.available():
+        return
+    conn = db.connect()
+    rows = conn.execute("SELECT id, data FROM templates").fetchall()
+    conn.close()
+    for r in rows:
+        try:
+            thumbnail.thumbnail_path(r["id"], r["data"])
+        except Exception as e:  # 한 템플릿 실패가 서버를 멈추지 않도록
+            app.logger.warning("썸네일 생성 실패 (#%s): %s", r["id"], e)
+
+
 @app.post("/api/templates")
 @login_required
 def create_template(user):
@@ -249,6 +304,10 @@ def insert_template(user, data):
     conn.execute("INSERT INTO library (user_id, template_id, added_at) VALUES (?,?,?)",
                  (user["id"], cur.lastrowid, int(time.time())))
     conn.commit()
+    if thumbnail.available():
+        import threading
+        threading.Thread(target=thumbnail.thumbnail_path,
+                         args=(cur.lastrowid, json.dumps(tpl, separators=(",", ":"))), daemon=True).start()
     return jsonify({"id": cur.lastrowid}), 201
 
 
@@ -450,5 +509,9 @@ def not_found(_e):
 db.init_db()
 
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=prerender_thumbnails, daemon=True).start()
+    if not thumbnail.available():
+        print("※ 블록 에셋이 없어 단순 미리보기로 표시됩니다. 실제 텍스처 썸네일: python tools/fetch_assets.py")
     print(f"플러그인 API 키: {PLUGIN_API_KEY}  (instance/plugin_api_key.txt)")
     app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 5000)))
