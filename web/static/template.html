@@ -23,9 +23,11 @@
         return;
       }
       document.title = `${t.name} · 블루프린트`;
-      const counts = new Map();
-      for (const b of t.data.blocks) counts.set(b[3], (counts.get(b[3]) || 0) + 1);
-      const palette = [...counts].sort((a, b) => b[1] - a[1]);
+      // 재료 목록: 서버가 아이템 단위(한국어 이름 + 아이콘)로 계산. 에셋이 없으면 블록 id 로 대체
+      const mats = t.materials || [];
+      const matHTML = mats.map((m) => `<li class="mat" title="${App.esc(m.name)} ${m.count}개">
+          <span class="slot">${m.icon ? `<img src="${m.icon}" alt="" loading="lazy">` : ""}<b>${m.count}</b></span>
+          <span class="mat-name">${App.esc(m.name)}</span></li>`).join("");
 
       root.innerHTML = `
         <div class="viewer">
@@ -50,10 +52,7 @@
             ${t.mine ? `<button class="btn ghost" id="del">삭제</button>` : ""}
             <button class="btn ghost" id="dl">JSON 다운로드</button></div>
           <h3 style="margin:24px 0 8px">재료 목록</h3>
-          <ul class="palette">${palette.map(([i, n]) =>
-            `<li>${t.thumbnail
-              ? `<img class="swatch icon" src="/api/blocks/icon.png?state=${encodeURIComponent(t.data.palette[i])}" alt="" loading="lazy">`
-              : `<span class="swatch" style="background:${App.blockColor(t.data.palette[i])}"></span>`}<span style="flex:1">${App.esc(t.data.palette[i].replace("minecraft:", ""))}</span><span>${n}</span></li>`).join("")}</ul>
+          <ul class="materials">${matHTML}</ul>
         </div>`;
 
       const layer = document.getElementById("layer");

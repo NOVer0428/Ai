@@ -13,6 +13,7 @@ from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
+import materials
 import thumbnail
 from template_format import TemplateError, normalize, validate
 
@@ -220,6 +221,7 @@ def get_template(tid):
         ).fetchone() is not None
     out = template_summary(row, saved)
     out["data"] = json.loads(row["data"])
+    out["materials"] = materials.materials(out["data"])
     out["mine"] = bool(user and row["author_id"] == user["id"])
     return jsonify(out)
 
@@ -238,6 +240,17 @@ def template_thumbnail(tid):
     resp = send_file(path, mimetype="image/png", conditional=True, max_age=0)
     resp.headers["Cache-Control"] = "no-cache"
     return resp
+
+
+@app.get("/api/items/<item>/icon.png")
+def item_icon(item):
+    """재료 목록용 아이템 아이콘: 아이템 그림이 있으면 그것, 블록 아이템은 입체 블록."""
+    if not thumbnail.available():
+        return err("아이콘이 없습니다.", 404)
+    path = materials.icon_path(item)
+    if path is None:
+        return err("아이콘이 없습니다.", 404)
+    return send_file(path, mimetype="image/png", max_age=86400)
 
 
 @app.get("/api/blocks/icon.png")

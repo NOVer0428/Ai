@@ -306,7 +306,7 @@ def _shaded(tex_name, shade, tint):
     return Image.merge("RGBA", (r, g, b, a))
 
 
-def render(data, rotation=0, max_y=None, size=(640, 480), supersample=2):
+def render(data, rotation=0, max_y=None, size=(640, 480), supersample=2, shadow=True):
     sx_, sy_, sz_ = data["size"]
     palette = data["palette"]
     cells = {}
@@ -370,12 +370,12 @@ def render(data, rotation=0, max_y=None, size=(640, 480), supersample=2):
 
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
-    # 바닥 그림자
-    shadow = Image.new("L", (W, H), 0)
-    foot = [screen(view(p)) for p in [(0, 0, 0), (sx_, 0, 0), (sx_, 0, sz_), (0, 0, sz_)]]
-    ImageDraw.Draw(shadow).polygon(foot, fill=90)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(scale * 0.6))
-    canvas.paste(Image.new("RGBA", (W, H), (20, 16, 10, 255)), (0, 0), shadow)
+    if shadow:  # 바닥 그림자
+        mask = Image.new("L", (W, H), 0)
+        foot = [screen(view(p)) for p in [(0, 0, 0), (sx_, 0, 0), (sx_, 0, sz_), (0, 0, sz_)]]
+        ImageDraw.Draw(mask).polygon(foot, fill=90)
+        mask = mask.filter(ImageFilter.GaussianBlur(scale * 0.6))
+        canvas.paste(Image.new("RGBA", (W, H), (20, 16, 10, 255)), (0, 0), mask)
 
     faces.sort(key=lambda f: f[0])
     for _, world, uvs, tex, shade, tint in faces:
