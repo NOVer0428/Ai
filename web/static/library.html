@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>내 보관함 · 블루프린트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1 class="page-title">내 보관함</h1>
+
+    <section class="panel link-box" id="link"></section>
+
+    <div class="grid" id="grid"></div>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const user = await App.header("library");
+      if (!App.requireLogin(user)) return;
+      const linkEl = document.getElementById("link");
+      const grid = document.getElementById("grid");
+
+      function renderLink(u, code) {
+        if (u.minecraft) {
+          linkEl.innerHTML = `<div>
+              <div><span class="status-dot on"></span><b>마인크래프트 계정 연동됨</b></div>
+              <p class="hint">연동된 플레이어: <span class="mono">${App.esc(u.minecraft.name)}</span> · 인게임에서 <code>/tb list</code> 로 보관함을 불러옵니다.</p>
+            </div>
+            <button class="btn ghost" id="unlink">연동 해제</button>`;
+          linkEl.querySelector("#unlink").onclick = async () => {
+            if (!confirm("마인크래프트 계정 연동을 해제할까요?")) return;
+            await App.api("/api/link", { method: "DELETE" });
+            u.minecraft = null;
+            renderLink(u);
+          };
+          return;
+        }
+        linkEl.innerHTML = `<div>
+            <div><span class="status-dot"></span><b>마인크래프트 계정이 연동되지 않았습니다</b></div>
+            ${code
+              ? `<p class="hint">서버에 접속해서 아래 명령어를 입력하세요. 코드는 10분간 유효합니다.</p>
+                 <div class="link-code">${code}</div>
+                 <div class="cmd">/tb link ${code}</div>`
+              : `<p class="hint">연동 코드를 발급받아 인게임에서 입력하면 보관함의 템플릿을 불러올 수 있습니다.</p>`}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn primary" id="gen">${code ? "새 코드 발급" : "연동 코드 발급"}</button>
+            ${code ? `<button class="btn ghost" id="check">연동 확인</button>` : ""}
+          </div>`;
+        linkEl.querySelector("#gen").onclick = async () => {
+          const r = await App.api("/api/link/code", { method: "POST" });
+          renderLink(u, r.code);
+          poll();
+        };
+        linkEl.querySelector("#check")?.addEventListener("click", () => refresh(code));
+      }
+
+      async function refresh(code) {
+        const u = await App.api("/api/auth/me");
+        if (u.minecraft) App.toast("연동이 완료됐습니다!");
+        renderLink(u, u.minecraft ? null : code);
+        return u;
+      }
+
+      // 코드 발급 후 연동될 때까지 잠깐 동안 자동 확인
+      let pollTimer;
+      function poll() {
+        clearInterval(pollTimer);
+        let n = 0;
+        pollTimer = setInterval(async () => {
+          if (++n > 120) return clearInterval(pollTimer);
+          const u = await App.api("/api/auth/me");
+          if (u.minecraft) {
+            clearInterval(pollTimer);
+            App.toast("연동이 완료됐습니다!");
+            renderLink(u);
+          }
+        }, 5000);
+      }
+
+      async function loadLibrary() {
+        const list = await App.api("/api/library");
+        grid.innerHTML = list.length
+          ? list.map((t, i) => App.cardHTML(t).replace('<span class="tag">', `<span class="tag">#${i + 1} · `)
+              .replace("</div></div>", `<div class="cmd">/tb build ${i + 1}</div></div></div>`)).join("")
+          : `<div class="empty">보관함이 비었습니다. <a href="/">템플릿 둘러보기 →</a></div>`;
+        App.observePreviews(grid);
+      }
+
+      App.bindSaveButtons(grid, user, () => loadLibrary());
+      renderLink(user);
+      loadLibrary();
+    })();
+  </script>
+</body>
+</html>

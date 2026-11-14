@@ -1,0 +1,18 @@
+# 웹사이트 주소 (끝에 / 없이)
+api-url: "http://127.0.0.1:5000"
+# 웹사이트 web/instance/plugin_api_key.txt 의 값 (또는 PLUGIN_API_KEY 환경변수 값)
+api-key: "여기에-플러그인-API-키를-넣으세요"
+
+build:
+  # 틱(1/20초)마다 설치할 블록 수. 클수록 빨리 지어지지만 서버 부하가 커집니다.
+  blocks-per-tick: 40
+  # 한 번에 지을 수 있는 최대 블록 수
+  max-blocks: 50000
+  # 플레이어 앞 몇 칸 떨어진 곳부터 지을지
+  distance: 2
+  # 건축 중 블록 설치 소리/파티클
+  effects: true
+
+save:
+  # /tb save 로 업로드 가능한 최대 영역 한 변 길이
+  max-size: 64
