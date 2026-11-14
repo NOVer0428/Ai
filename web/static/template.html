@@ -25,9 +25,9 @@
       document.title = `${t.name} · 블루프린트`;
       // 재료 목록: 서버가 아이템 단위(한국어 이름 + 아이콘)로 계산. 에셋이 없으면 블록 id 로 대체
       const mats = t.materials || [];
-      const matHTML = mats.map((m) => `<li class="mat" title="${App.esc(m.name)} ${m.count}개">
-          <span class="slot">${m.icon ? `<img src="${m.icon}" alt="" loading="lazy">` : ""}<b>${m.count}</b></span>
-          <span class="mat-name">${App.esc(m.name)}</span></li>`).join("");
+      const matHTML = mats.map((m) => `<li>
+          ${m.icon ? `<img class="swatch icon" src="${m.icon}" alt="" loading="lazy">` : `<span class="swatch"></span>`}
+          <span style="flex:1">${App.esc(m.name)}</span><span>${m.count.toLocaleString()}</span></li>`).join("");
 
       root.innerHTML = `
         <div class="viewer">
@@ -52,7 +52,7 @@
             ${t.mine ? `<button class="btn ghost" id="del">삭제</button>` : ""}
             <button class="btn ghost" id="dl">JSON 다운로드</button></div>
           <h3 style="margin:24px 0 8px">재료 목록</h3>
-          <ul class="materials">${matHTML}</ul>
+          <ul class="palette">${matHTML}</ul>
         </div>`;
 
       const layer = document.getElementById("layer");
