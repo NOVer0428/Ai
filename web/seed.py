@@ -145,8 +145,9 @@ def garden_gazebo():
 
 def seed_templates():
     from seed_medieval import medieval_templates
+    from seed_townhouse import townhouse_templates
 
-    return medieval_templates() + [
+    return townhouse_templates() + medieval_templates() + [
         {"name": "아늑한 오두막", "category": "주거",
          "description": "참나무와 가문비나무 지붕으로 만든 1인용 오두막. 작업대와 화로 포함.",
          "data": cottage()},
