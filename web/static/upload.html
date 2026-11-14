@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>업로드 · 블루프린트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1 class="page-title">템플릿 업로드</h1>
+    <div class="detail" style="margin-top:0">
+      <form class="panel" id="form">
+        <p class="hint" style="margin-top:0">인게임에서 <code>/tb pos1</code>, <code>/tb pos2</code>로 영역을 잡고 <code>/tb save 이름</code> 하면 바로 업로드됩니다. 직접 JSON 파일을 올릴 수도 있어요.</p>
+        <label for="name">이름</label>
+        <input id="name" maxlength="40" required>
+        <label for="category">분류</label>
+        <input id="category" maxlength="20" placeholder="예: 주거, 방어, 장식" list="cats">
+        <datalist id="cats"><option>주거</option><option>방어</option><option>장식</option><option>상업</option><option>기타</option></datalist>
+        <label for="description">설명</label>
+        <textarea id="description" rows="3" maxlength="500"></textarea>
+        <label for="file">템플릿 JSON 파일</label>
+        <input id="file" type="file" accept=".json,application/json" required>
+        <div class="hint">형식: <code>{"size":[x,y,z], "palette":["minecraft:..."], "blocks":[[x,y,z,팔레트번호], ...]}</code> · 정면(입구)은 z=0 쪽</div>
+        <button class="btn primary" type="submit" style="margin-top:18px">업로드</button>
+        <div class="error" id="error"></div>
+      </form>
+      <div class="viewer panel" style="padding:0"><canvas id="cv" style="width:100%;height:380px;display:block"></canvas></div>
+    </div>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const user = await App.header("upload");
+      if (!App.requireLogin(user)) return;
+      const error = document.getElementById("error");
+      let data = null;
+      document.getElementById("file").onchange = async (e) => {
+        error.textContent = "";
+        data = null;
+        const f = e.target.files[0];
+        if (!f) return;
+        try {
+          data = JSON.parse(await f.text());
+          App.render(document.getElementById("cv"), data);
+          const name = document.getElementById("name");
+          if (!name.value) name.value = f.name.replace(/\.json$/i, "").slice(0, 40);
+        } catch (err) {
+          error.textContent = "JSON을 읽을 수 없습니다: " + err.message;
+        }
+      };
+      document.getElementById("form").onsubmit = async (e) => {
+        e.preventDefault();
+        if (!data) { error.textContent = "템플릿 파일을 선택하세요."; return; }
+        try {
+          const r = await App.api("/api/templates", { method: "POST", body: {
+            name: document.getElementById("name").value,
+            category: document.getElementById("category").value,
+            description: document.getElementById("description").value,
+            data,
+          }});
+          location.href = `/template?id=${r.id}`;
+        } catch (err) {
+          error.textContent = err.message;
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

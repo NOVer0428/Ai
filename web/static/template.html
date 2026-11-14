@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>템플릿 · 블루프린트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <div class="detail" id="detail"></div>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const user = await App.header("home");
+      const id = new URLSearchParams(location.search).get("id");
+      const root = document.getElementById("detail");
+      let t;
+      try {
+        t = await App.api(`/api/templates/${encodeURIComponent(id)}`);
+      } catch (err) {
+        root.innerHTML = `<div class="empty">${App.esc(err.message)}</div>`;
+        return;
+      }
+      document.title = `${t.name} · 블루프린트`;
+      const counts = new Map();
+      for (const b of t.data.blocks) counts.set(b[3], (counts.get(b[3]) || 0) + 1);
+      const palette = [...counts].sort((a, b) => b[1] - a[1]);
+
+      root.innerHTML = `
+        <div class="viewer">
+          <canvas id="cv"></canvas>
+          <div class="layer">높이 <input type="range" id="layer" min="0" max="${t.size[1] - 1}" value="${t.size[1] - 1}"><span id="lv">${t.size[1]}</span></div>
+          <div class="controls">
+            <button class="btn ghost" id="rl" title="왼쪽으로 회전">⟲</button>
+            <button class="btn ghost" id="rr" title="오른쪽으로 회전">⟳</button>
+          </div>
+        </div>
+        <div>
+          <span class="tag">${App.esc(t.category)}</span>
+          <h1 style="margin:10px 0 6px">${App.esc(t.name)}</h1>
+          <p class="hint" style="line-height:1.6">${App.esc(t.description) || "설명이 없습니다."}</p>
+          <dl class="specs">
+            <dt>크기 (X×Y×Z)</dt><dd>${t.size.join(" × ")}</dd>
+            <dt>블록 수</dt><dd>${t.blockCount.toLocaleString()}</dd>
+            <dt>제작자</dt><dd>${App.esc(t.author || "기본 제공")}</dd>
+            <dt>보관한 사람</dt><dd>${t.saves}</dd>
+          </dl>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="actions">${App.saveButton(t)}
+            ${t.mine ? `<button class="btn ghost" id="del">삭제</button>` : ""}
+            <button class="btn ghost" id="dl">JSON 다운로드</button></div>
+          <h3 style="margin:24px 0 8px">재료 목록</h3>
+          <ul class="palette">${palette.map(([i, n]) =>
+            `<li><span class="swatch" style="background:${App.blockColor(t.data.palette[i])}"></span><span style="flex:1">${App.esc(t.data.palette[i].replace("minecraft:", ""))}</span><span>${n}</span></li>`).join("")}</ul>
+        </div>`;
+
+      const cv = document.getElementById("cv");
+      const layer = document.getElementById("layer");
+      let rotation = 2;
+      const draw = () => {
+        document.getElementById("lv").textContent = +layer.value + 1;
+        App.render(cv, t.data, { rotation, maxY: +layer.value });
+      };
+      document.getElementById("rl").onclick = () => { rotation = (rotation + 3) % 4; draw(); };
+      document.getElementById("rr").onclick = () => { rotation = (rotation + 1) % 4; draw(); };
+      layer.oninput = draw;
+      addEventListener("resize", draw);
+      draw();
+
+      App.bindSaveButtons(document.getElementById("actions"), user, (_id, saved, btn) => {
+        t.saved = saved;
+        btn.outerHTML = App.saveButton(t);
+      });
+      document.getElementById("dl").onclick = () => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(t.data)], { type: "application/json" }));
+        a.download = `${t.name}.json`;
+        a.click();
+      };
+      document.getElementById("del")?.addEventListener("click", async () => {
+        if (!confirm("이 템플릿을 삭제할까요? 다른 사람의 보관함에서도 사라집니다.")) return;
+        await App.api(`/api/templates/${t.id}`, { method: "DELETE" });
+        location.href = "/";
+      });
+    })();
+  </script>
+</body>
+</html>

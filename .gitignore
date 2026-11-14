@@ -1,0 +1,10 @@
+# web
+web/.venv/
+web/instance/
+__pycache__/
+
+# plugin
+plugin/.gradle/
+plugin/build/
+.idea/
+*.iml

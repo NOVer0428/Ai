@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 · 블루프린트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <form class="panel auth" id="form">
+      <h1>로그인</h1>
+      <p class="hint">계정이 없나요? <a href="/register">회원가입</a></p>
+      <label for="username">아이디</label>
+      <input id="username" autocomplete="username" required>
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button class="btn primary" type="submit">로그인</button>
+      <div class="error" id="error"></div>
+    </form>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    App.header();
+    // 같은 사이트 주소로만 이동 (/\evil.com 같은 우회 차단)
+    const safeNext = (() => {
+      try {
+        const u = new URL(new URLSearchParams(location.search).get("next") || "/library", location.origin);
+        return u.origin === location.origin ? u.pathname + u.search : "/library";
+      } catch { return "/library"; }
+    })();
+    document.getElementById("form").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await App.api("/api/auth/login", { method: "POST", body: {
+          username: document.getElementById("username").value,
+          password: document.getElementById("password").value,
+        }});
+        location.href = safeNext;
+      } catch (err) {
+        document.getElementById("error").textContent = err.message;
+      }
+    };
+  </script>
+</body>
+</html>
