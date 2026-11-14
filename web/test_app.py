@@ -113,6 +113,24 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.c.get("/api/blocks/icon.png?state=../../app").status_code, 404)
 
+    def test_builtin_templates(self):
+        from seed import seed_templates
+        seeds = seed_templates()
+        self.assertEqual(len(seeds), 16)  # 갈림길 모퉁이 주택 + 새 15종
+        self.assertEqual(len({t["name"] for t in seeds}), 16)
+        names = {t["name"] for t in self.c.get("/api/templates").json["templates"]}
+        self.assertTrue({t["name"] for t in seeds} <= names)
+        self.assertNotIn("아늑한 오두막", names)  # 지운 옛 기본 템플릿
+
+    def test_builtin_templates_structure(self):
+        """기본 템플릿마다 지지 없는 블록·짝 없는 문/침대·샐 유체·막힌 방이 없어야 한다 (qa.py)."""
+        from qa import check
+        from seed import seed_templates
+        from template_format import validate
+        for t in seed_templates():
+            issues = check(validate(t["data"]))
+            self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
+
     def test_form_post_rejected(self):
         r = self.c.post("/api/auth/login", data={"username": "a", "password": "b"})
         self.assertEqual(r.status_code, 415)

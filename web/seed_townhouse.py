@@ -240,7 +240,7 @@ def crossroads_townhouse():
     b.set(-1, 1, 7, S("hay_block", axis="z"))
     b.set(-3, 1, 6, S("chipped_anvil", facing="north"))
     b.set(-1, 1, 6, S("composter"))
-    b.set(-3, 2, 4, S("lantern", hanging=True))
+    b.set(-3, 4, 4, S("lantern", hanging=True))
     # 처마 쪽 덩굴
     for y in (2, 3, 4):
         b.set(-1, y, 2, S("vine", east=True))
@@ -276,6 +276,7 @@ def crossroads_townhouse():
     b.set(8, 6, 0, S("chest", facing="south"))
     b.set(5, 6, 4, S("red_carpet"))
     b.set(5, 6, 3, S("red_carpet"))
+    b.set(5, 10, 4, S("stripped_oak_log", axis="x"))
     b.set(5, 9, 4, S("lantern", hanging=True))
     b.set(15, 1, 6, S("barrel", facing="up"))
     b.set(16, 1, 6, S("barrel", facing="up"))

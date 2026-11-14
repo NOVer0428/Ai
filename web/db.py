@@ -73,7 +73,12 @@ def init_db():
     existing = {r[0]: r[1] for r in conn.execute(
         "SELECT name, data FROM templates WHERE author_id IS NULL")}
     now = int(time.time())
-    for t in seed_templates():
+    seeds = seed_templates()
+    # 코드에서 빠진 기본 템플릿은 DB 에서도 지운다 (사용자가 올린 템플릿은 건드리지 않음)
+    names = {t["name"] for t in seeds}
+    for old in set(existing) - names:
+        conn.execute("DELETE FROM templates WHERE name = ? AND author_id IS NULL", (old,))
+    for t in seeds:
         sx, sy, sz = t["data"]["size"]
         data = json.dumps(t["data"], separators=(",", ":"))
         values = (t["description"], t["category"], sx, sy, sz, len(t["data"]["blocks"]), data)

@@ -16,7 +16,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 BASE = Path(__file__).parent
 ASSETS = BASE / "instance" / "assets"
 CACHE = BASE / "instance" / "thumbs"
-RENDER_VERSION = "3"  # 렌더러가 바뀌면 올려서 캐시 무효화
+RENDER_VERSION = "4"  # 렌더러가 바뀌면 올려서 캐시 무효화
 
 COS30 = math.cos(math.radians(30))
 # 면 방향별 밝기 (마인크래프트 기본 음영)
@@ -133,9 +133,14 @@ def _tint(block_id):
         return (97, 153, 97)
     if bid == "birch_leaves":
         return (128, 167, 85)
-    if bid in ("grass_block", "short_grass", "tall_grass", "fern", "large_fern", "sugar_cane"):
+    if bid in ("grass_block", "short_grass", "tall_grass", "fern", "large_fern", "sugar_cane",
+               "potted_fern", "bush"):
         return (145, 189, 89)
-    return (119, 171, 47)
+    # 원래 색을 가진 블록(벚나무·진달래·창백한 참나무 잎 등)은 색을 입히지 않는다
+    if bid in ("oak_leaves", "jungle_leaves", "acacia_leaves", "dark_oak_leaves", "mangrove_leaves",
+               "vine", "lily_pad", "attached_melon_stem", "attached_pumpkin_stem", "melon_stem", "pumpkin_stem"):
+        return (119, 171, 47)
+    return None
 
 
 # ---------------------------------------------------------------- 기하 계산
