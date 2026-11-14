@@ -13,7 +13,7 @@
 | 폴더 | 내용 |
 |------|------|
 | `web/` | 웹사이트. Python 3.12 + Flask, DB는 `web/instance/app.db` (SQLite) |
-| `plugin/` | Paper 1.21.x 플러그인 (Java 21, Gradle) |
+| `plugin/` | **Paper 26.3** 플러그인 (Java 25, Gradle) |
 
 ## 1. 웹사이트 실행
 
