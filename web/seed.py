@@ -1,5 +1,7 @@
 """기본 제공 건물 템플릿 생성기. 정면(입구)은 z = 0, 북쪽(-z)을 바라본다."""
 
+from template_format import normalize
+
 
 class Builder:
     """size 를 주면 그 범위 밖은 버리고, 생략하면 음수 좌표도 허용한 뒤 build() 때 0 기준으로 옮긴다."""
@@ -13,7 +15,8 @@ class Builder:
             if block is None:
                 self.cells.pop((x, y, z), None)
             else:
-                self.cells[(x, y, z)] = block
+                # 모든 블록은 26.3 블록 데이터로 검사·완성된 전체 상태로 저장 (없는 블록이면 오류)
+                self.cells[(x, y, z)] = normalize(block)
 
     def fill(self, x1, y1, z1, x2, y2, z2, block):
         for x in range(min(x1, x2), max(x1, x2) + 1):

@@ -66,21 +66,28 @@ def close_db(_exc=None):
 def init_db():
     conn = connect()
     conn.executescript(SCHEMA)
-    # 기본 템플릿 중 아직 없는 것(이름 기준)만 추가 → 기존 DB에도 새 기본 템플릿이 들어간다
+    # 기본 템플릿(작성자 없음)을 코드와 맞춘다: 없으면 추가, 내용이 바뀌었으면 갱신 (이름 기준)
     from seed import seed_templates
     import time
 
-    existing = {r[0] for r in conn.execute("SELECT name FROM templates WHERE author_id IS NULL")}
+    existing = {r[0]: r[1] for r in conn.execute(
+        "SELECT name, data FROM templates WHERE author_id IS NULL")}
     now = int(time.time())
     for t in seed_templates():
-        if t["name"] in existing:
-            continue
         sx, sy, sz = t["data"]["size"]
-        conn.execute(
-            "INSERT INTO templates (name, description, category, size_x, size_y, size_z,"
-            " block_count, data, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (t["name"], t["description"], t["category"], sx, sy, sz,
-             len(t["data"]["blocks"]), json.dumps(t["data"], separators=(",", ":")), now),
-        )
+        data = json.dumps(t["data"], separators=(",", ":"))
+        values = (t["description"], t["category"], sx, sy, sz, len(t["data"]["blocks"]), data)
+        if t["name"] not in existing:
+            conn.execute(
+                "INSERT INTO templates (description, category, size_x, size_y, size_z,"
+                " block_count, data, name, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (*values, t["name"], now),
+            )
+        elif existing[t["name"]] != data:
+            conn.execute(
+                "UPDATE templates SET description=?, category=?, size_x=?, size_y=?, size_z=?,"
+                " block_count=?, data=? WHERE name=? AND author_id IS NULL",
+                (*values, t["name"]),
+            )
     conn.commit()
     conn.close()
