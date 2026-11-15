@@ -21,8 +21,10 @@ def _pane(k, x, y, z, along, glass="glass_pane"):
     k.pane(x, y, z, along, glass)
 
 
-def _win(k, x0, x1, y0, y1, z=None, x=None, glass="glass_pane", sill=False, out=None):
-    """벽면 창. z 를 주면 남북 벽(x0..x1), x 를 주면 동서 벽(x0..x1 을 z 범위로)."""
+def _win(k, x0, x1, y0, y1, z=None, x=None, glass="glass_pane", sill=False, out=None, frame=False):
+    """벽면 창. z 를 주면 남북 벽(x0..x1), x 를 주면 동서 벽(x0..x1 을 z 범위로).
+    frame: 바깥 한 칸에 어두운 세로틀. 벽이 1칸이라 안으로 들이지 않고 틀을 밖으로 내어 깊이를 만든다.
+    인방은 따로 두지 않는다: 1층 창 위는 층 띠(y5), 2층 창 위는 처마 반자(y9)가 그 역할을 한다."""
     for a in range(x0, x1 + 1):
         for y in range(y0, y1 + 1):
             if z is not None:
@@ -34,6 +36,13 @@ def _win(k, x0, x1, y0, y1, z=None, x=None, glass="glass_pane", sill=False, out=
                 k.set(a, y0 - 1, z + (-1 if out == "north" else 1), SILL)
             else:
                 k.set(x + (-1 if out == "west" else 1), y0 - 1, a, SILL)
+    if frame:
+        d = -1 if out in ("north", "west") else 1
+        at = (lambda a, y: (a, y, z + d)) if z is not None else (lambda a, y: (x + d, y, a))
+        for y in range(y0, y1 + 1):                       # 세로틀: 벽에 붙은 트랩도어
+            for a, side in ((x0 - 1, 0), (x1 + 1, 1)):
+                facing = (("west", "east") if z is not None else ("north", "south"))[side]
+                k.set(*at(a, y), S("dark_oak_trapdoor", facing=facing, open=True))
 
 
 def family_house():
@@ -81,24 +90,24 @@ def family_house():
     # ---------------------------------------------------------------- 창 (위아래 층 같은 열)
     # 정면 (z=0, 북)
     for x0, x1 in ((2, 3), (5, 6)):
-        _win(k, x0, x1, 1, 3, z=0)                       # 거실 큰 창
-        _win(k, x0, x1, 7, 8, z=0)  # 안방
-    _win(k, 15, 17, 1, 3, z=0)                           # 식당
-    _win(k, 15, 17, 7, 8, z=0)  # 아이방
+        _win(k, x0, x1, 1, 3, z=0, out="north", frame=True)   # 거실 큰 창
+        _win(k, x0, x1, 7, 8, z=0, out="north", frame=True)   # 안방
+    _win(k, 15, 17, 1, 3, z=0, out="north", frame=True)       # 식당
+    _win(k, 15, 17, 7, 8, z=0, out="north", frame=True)       # 아이방
     _win(k, 10, 11, 7, 8, z=0)  # 2층 홀
     # 현관: 문 + 옆 유리 + 위 채광창
     k.door(10, 1, 0, "spruce", facing="north")
     _pane(k, 10, 3, 0, "x")
     _win(k, 11, 11, 1, 3, z=0)
     # 서쪽 (x=0)
-    _win(k, 2, 4, 1, 3, x=0)
-    _win(k, 6, 8, 1, 3, x=0)
-    _win(k, 2, 4, 7, 8, x=0)
+    _win(k, 2, 4, 1, 3, x=0, out="west", frame=True)
+    _win(k, 6, 8, 1, 3, x=0, out="west", frame=True)
+    _win(k, 2, 4, 7, 8, x=0, out="west", frame=True)
     # 뒤쪽 (z=10, 남)
-    _win(k, 2, 6, 1, 3, z=10)                            # 거실 정원 창
-    _win(k, 15, 17, 2, 3, z=10)                          # 개수대 위 창
-    _win(k, 3, 5, 7, 8, z=10, glass="white_stained_glass_pane")  # 욕실 불투명
-    _win(k, 15, 17, 7, 8, z=10)  # 서재
+    _win(k, 2, 6, 1, 3, z=10, out="south", frame=True)        # 거실 정원 창
+    _win(k, 15, 17, 2, 3, z=10, out="south", frame=True)      # 개수대 위 창
+    _win(k, 3, 5, 7, 8, z=10, glass="white_stained_glass_pane", out="south", frame=True)  # 욕실 불투명
+    _win(k, 15, 17, 7, 8, z=10, out="south", frame=True)      # 서재
     _win(k, 10, 10, 7, 8, z=10)  # 2층 홀
     k.door(10, 1, 10, "spruce", facing="south")          # 뒷문 → 정원
     # 동쪽 2층 (x=20): 테라스 문, 서재 창
@@ -118,6 +127,13 @@ def family_house():
             k.set(x, 4, z, S("polished_deepslate_slab", type="top"))
             k.set(x, 0, z, S("polished_deepslate_slab"))
     k.hang(10, 3, -1)
+
+    # ---------------------------------------------------------------- 벽 깊이: 층 띠 + 현관 기둥
+    # 2층 바닥 높이에 어두운 띠를 둘러 층을 나누고, 현관 칸(x9..12)만 띠를 끊어 세로로 강조한다.
+    k.cornice(0, 0, 27, 10, 5, "polished_deepslate")
+    k.clear(9, 5, -1, 12, 5, -1)
+    for x in (8, 13):                                        # 현관 양옆 기둥 (깊이 층: 기둥 > 나무벽 > 문)
+        k.pilaster(x, 0, "north", 1, 8, PLINTH)
 
     # ---------------------------------------------------------------- 1층 거실 (x1..7)
     for z in (6, 7, 8):
@@ -139,6 +155,9 @@ def family_house():
     k.set(2, 2, 4, S("potted_fern"))
     k.set(5, 4, 7, S("iron_chain", axis="y"))
     k.hang(5, 3, 7)
+    for z in (2, 4, 6, 8):                                     # 천장 들보 (짧은 변 방향)
+        for x in range(1, 8):
+            k.set(x, 4, z, S("spruce_trapdoor", facing="north", half="top"))
 
     # ---------------------------------------------------------------- 1층 홀 (x9..12)
     k.set(9, 1, 1, S("barrel", facing="east"))                 # 신발장
@@ -168,6 +187,10 @@ def family_house():
         k.set(16, 4, z, S("iron_chain", axis="y"))
         k.hang(16, 3, z)
     k.hang(17, 4, 7)
+    for z in (2, 5, 8):                                        # 천장 들보 (거실과 같은 결)
+        for x in range(14, 20):
+            k.set(x, 4, z, S("spruce_trapdoor", facing="north", half="top"))
+    k.set(17, 2, 9, S("light_weighted_pressure_plate"))        # 조리대 위 도마
 
     # ---------------------------------------------------------------- 차고 (x21..26)
     for x in range(22, 26):                                    # 접이식 차고 문 (트랩도어)
@@ -209,6 +232,8 @@ def family_house():
         for y in (6, 7):
             k.set(7, y, z, S("barrel", facing="west"))
     k.rug(2, 1, 6, 3, 6, "light_gray")
+    k.set(3, 6, 3, S("spruce_slab"))                           # 침대 발치 벤치
+    k.set(4, 6, 3, S("spruce_slab"))
     k.set(4, 10, 3, S("sea_lantern"))
 
     # 욕실 (x1..7, z7..9)
@@ -267,6 +292,7 @@ def real_templates():
         {"name": "모던 2층 단독주택", "category": "주택",
          "description": "1블록=1m 실제 비율로 옮긴 흰 벽·검은 슬레이트 박공지붕 주택. "
                         "나무 마감 현관과 캐노피, 차고 위 유리 난간 테라스. "
+                        "어두운 창틀·층 띠·현관 기둥으로 벽에 깊이를 주고, 1층 천장에 나무 들보. "
                         "1층 거실·현관 홀·부엌 식당·차고, 2층 안방·욕실·아이방·서재. "
                         "층고 4칸, 위아래 층 창 정렬, 모든 방은 문과 계단으로 이어진다.",
          "data": family_house()},
