@@ -40,7 +40,27 @@ CREATE TABLE IF NOT EXISTS link_codes (
     user_id    INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
 );
+-- 회원마다 하나씩 발급하는 마인크래프트 서버 키. 원문은 저장하지 않고 sha256 해시만 둔다
+CREATE TABLE IF NOT EXISTS server_keys (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    key_hash   TEXT NOT NULL UNIQUE,
+    prefix     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 """
+
+# 기존 DB에 나중에 추가된 열 (없으면 ALTER TABLE 로 붙인다)
+TEMPLATE_COLUMNS = {
+    "active": "INTEGER NOT NULL DEFAULT 1",  # 0 = 관리자가 비활성화: 일반 사용자에게 숨김
+}
+USER_COLUMNS = {
+    "active": "INTEGER NOT NULL DEFAULT 1",  # 0 = 관리자가 비활성화: 로그인·플러그인 차단
+    "email": "TEXT",
+    "verified_at": "INTEGER",       # NULL 이고 email 이 있으면 인증 전. 이메일 없는 옛 계정은 인증 면제
+    "verify_sent_at": "INTEGER",
+    "link_key_id": "INTEGER REFERENCES server_keys(id) ON DELETE SET NULL",  # 어느 서버 키로 연동했는지
+}
 
 
 def connect():
@@ -66,6 +86,12 @@ def close_db(_exc=None):
 def init_db():
     conn = connect()
     conn.executescript(SCHEMA)
+    for table, columns in (("users", USER_COLUMNS), ("templates", TEMPLATE_COLUMNS)):
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email COLLATE NOCASE)")
     # 기본 템플릿(작성자 없음)을 코드와 맞춘다: 없으면 추가, 내용이 바뀌었으면 갱신 (이름 기준)
     from seed import seed_templates
     import time

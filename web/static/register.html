@@ -13,6 +13,9 @@
       <label for="username">아이디</label>
       <input id="username" autocomplete="username" required minlength="3" maxlength="20">
       <div class="hint">3~20자, 영문·숫자·한글·_</div>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="email" required maxlength="254">
+      <div class="hint">가입을 마치려면 이 주소로 오는 인증 메일의 링크를 눌러야 해요.</div>
       <label for="password">비밀번호</label>
       <input id="password" type="password" autocomplete="new-password" required minlength="8">
       <label for="password2">비밀번호 확인</label>
@@ -33,10 +36,15 @@
         return;
       }
       try {
-        await App.api("/api/auth/register", { method: "POST", body: {
-          username: document.getElementById("username").value, password,
+        const r = await App.api("/api/auth/register", { method: "POST", body: {
+          username: document.getElementById("username").value,
+          email: document.getElementById("email").value, password,
         }});
-        location.href = "/library";
+        document.getElementById("form").innerHTML = `<h1>메일함을 확인해 주세요</h1>
+          <p><b>${App.esc(r.email)}</b>(으)로 인증 메일을 보냈어요.</p>
+          <p class="hint">메일의 링크를 누르면 가입이 끝나고 바로 로그인돼요. 링크는 24시간 동안 유효해요.
+          메일이 안 보이면 스팸함도 확인해 주세요.</p>
+          <a class="btn ghost" href="/login">로그인 화면으로</a>`;
       } catch (err) {
         error.textContent = err.message;
       }

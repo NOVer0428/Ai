@@ -35,7 +35,11 @@ const App = (() => {
     const box = el.querySelector(".userbox");
     const user = await me().catch(() => null);
     if (user) {
-      box.innerHTML = `<span><span class="status-dot ${user.minecraft ? "on" : ""}"></span>${esc(user.username)}</span>
+      if (user.isAdmin) {
+        el.querySelector("nav.main").insertAdjacentHTML("beforeend", `<a href="/admin" data-k="admin">관리자</a>`);
+        el.querySelector(`[data-k="${active}"]`)?.classList.add("active");
+      }
+      box.innerHTML = `<a href="/profile" title="내 프로필" style="color:inherit;text-decoration:none;font-weight:700"><span class="status-dot ${user.minecraft ? "on" : ""}"></span>${esc(user.username)}</a>
         <button class="btn ghost" id="logout">로그아웃</button>`;
       box.querySelector("#logout").onclick = async () => {
         await api("/api/auth/logout", { method: "POST" });

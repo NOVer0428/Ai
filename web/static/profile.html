@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>내 프로필 · 블루프린트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap" id="main" style="padding-top:36px"></main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const user = await App.header("profile");
+      if (!App.requireLogin(user)) return;
+      const main = document.getElementById("main");
+      const date = (s) => new Date(s * 1000).toLocaleDateString("ko-KR");
+
+      async function render() {
+        const p = await App.api("/api/profile");
+        const badge = p.isAdmin ? `<span class="badge admin">관리자</span>`
+          : p.emailVerified ? `<span class="badge ok">이메일 인증됨</span>` : "";
+        const mc = p.minecraft
+          ? `<p><span class="status-dot on"></span><b>${App.esc(p.minecraft.name)}</b></p>
+             <p class="hint">인게임에서 <code>/tb list</code> 로 보관함을 불러와요.</p>
+             <button class="btn ghost" id="unlink">연동 해제</button>`
+          : `<p class="hint">아직 연동하지 않았어요. 내 보관함에서 연동 코드를 받아 인게임에 입력하세요.</p>
+             <a class="btn ghost" href="/library">연동하러 가기</a>`;
+        const key = p.serverKey
+          ? `<div class="cmd" style="width:100%">${App.esc(p.serverKey.prefix)}••••••••••••••••</div>
+             <p class="hint">발급 ${date(p.serverKey.createdAt)} · 연동된 플레이어 ${p.serverKey.players}명</p>`
+          : `<p class="hint">아직 발급받지 않았어요.</p>`;
+        main.innerHTML = `
+          <section class="panel profile-head">
+            <div class="avatar" aria-hidden="true">${App.esc(p.username.slice(0, 1).toUpperCase())}</div>
+            <div style="flex:1 1 280px;min-width:0">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h1>${App.esc(p.username)}</h1>${badge}</div>
+              <p class="hint" style="margin:6px 0 0">${p.email ? App.esc(p.email) + " · " : ""}${date(p.createdAt)} 가입</p>
+            </div>
+            <button class="btn ghost" id="pwBtn">비밀번호 변경</button>
+          </section>
+          <form class="panel" id="pwForm" hidden style="margin-bottom:20px;max-width:420px">
+            <h2>비밀번호 변경</h2>
+            <label for="cur">지금 비밀번호</label><input id="cur" type="password" autocomplete="current-password" required>
+            <label for="new1">새 비밀번호</label><input id="new1" type="password" autocomplete="new-password" required minlength="8">
+            <button class="btn primary" type="submit" style="margin-top:14px">바꾸기</button>
+            <div class="error" id="pwErr"></div>
+          </form>
+          <section class="stats" aria-label="요약">
+            <div class="panel"><span class="hint">보관함</span><b>${p.stats.library}</b></div>
+            <div class="panel"><span class="hint">내가 올린 템플릿</span><b>${p.stats.uploads}</b></div>
+            <div class="panel"><span class="hint">받은 담기</span><b>${p.stats.savesReceived}</b></div>
+          </section>
+          <div class="two-col">
+            <section class="panel"><h2>마인크래프트 계정</h2>${mc}</section>
+            <section class="panel"><h2>내 서버 키</h2>
+              <p class="hint">서버를 직접 운영할 때만 필요해요. 키 원문은 발급할 때 한 번만 보여요.</p>${key}
+              <a class="btn ghost" href="/library#serverKey">${p.serverKey ? "새 키 발급" : "키 발급"}하러 가기</a>
+            </section>
+          </div>
+          <h2 style="margin:28px 0 12px">내가 올린 템플릿</h2>
+          <div class="grid" id="uploads"></div>`;
+        const grid = main.querySelector("#uploads");
+        grid.innerHTML = p.uploads.length
+          ? p.uploads.map((t) => App.cardHTML(t).replace('<span class="tag">',
+              t.active ? '<span class="tag">' : '<span class="tag" title="관리자가 비활성화해서 다른 사람에게 보이지 않아요">비활성 · ')).join("")
+          : `<div class="empty">아직 올린 템플릿이 없어요. <a href="/upload">업로드하기 →</a></div>`;
+        App.observePreviews(grid);
+        App.bindSaveButtons(grid, user, render);
+        main.querySelector("#unlink")?.addEventListener("click", async () => {
+          if (!confirm("마인크래프트 계정 연동을 해제할까요?")) return;
+          await App.api("/api/link", { method: "DELETE" });
+          render();
+        });
+        const form = main.querySelector("#pwForm");
+        main.querySelector("#pwBtn").onclick = () => { form.hidden = !form.hidden; };
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          try {
+            await App.api("/api/auth/password", { method: "POST", body: {
+              current: form.querySelector("#cur").value, new: form.querySelector("#new1").value } });
+            form.hidden = true;
+            form.reset();
+            App.toast("비밀번호를 바꿨어요.");
+          } catch (err) {
+            form.querySelector("#pwErr").textContent = err.message;
+          }
+        };
+      }
+      render();
+    })();
+  </script>
+</body>
+</html>

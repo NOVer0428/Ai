@@ -8,10 +8,21 @@ _tmp = tempfile.mkdtemp()
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 os.environ["PLUGIN_API_KEY"] = "test-key"
 os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ["ADMIN_USERS"] = "boss1"
 
+import re  # noqa: E402
+
+import app as appmod  # noqa: E402
 from app import app  # noqa: E402
 
 PLUGIN = {"Authorization": "Bearer test-key"}
+MAILS = []  # (받는 사람, 제목, 본문)
+appmod.send_mail = lambda to, subject, text: MAILS.append((to, subject, text))
+
+
+def verify_path(email):
+    text = next(t for to, _, t in reversed(MAILS) if to == email)
+    return re.search(r"https?://[^/]+(/verify\?token=\S+)", text).group(1)
 
 
 class FlowTest(unittest.TestCase):
@@ -19,9 +30,125 @@ class FlowTest(unittest.TestCase):
         self.c = app.test_client()
 
     def register(self, name):
-        r = self.c.post("/api/auth/register", json={"username": name, "password": "password123"})
+        email = f"{name}@example.com"
+        r = self.c.post("/api/auth/register", json={"username": name, "email": email, "password": "password123"})
         self.assertEqual(r.status_code, 201, r.json)
-        return r.json
+        r = self.c.get(verify_path(email))
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/library?verified=1", r.headers["Location"])
+        return self.c.get("/api/auth/me").json
+
+    def test_email_verification(self):
+        body = {"username": "mailuser1", "email": "mailuser1@example.com", "password": "password123"}
+        r = self.c.post("/api/auth/register", json=body)
+        self.assertEqual(r.status_code, 201)
+        self.assertIsNone(self.c.get("/api/auth/me").json)  # 인증 전에는 로그인 안 됨
+        login = {"username": "mailuser1", "password": "password123"}
+        self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 403)
+        # 잘못된 토큰
+        self.assertIn("verify=invalid", self.c.get("/verify?token=bad").headers["Location"])
+        # 같은 이메일로 또 가입 불가
+        dup = {"username": "mailuser2", "email": "MailUser1@example.com", "password": "password123"}
+        self.assertEqual(self.c.post("/api/auth/register", json=dup).status_code, 409)
+        bad = {"username": "mailuser3", "email": "not-an-email", "password": "password123"}
+        self.assertEqual(self.c.post("/api/auth/register", json=bad).status_code, 400)
+        # 인증 후 로그인
+        self.c.get(verify_path("mailuser1@example.com"))
+        self.c.post("/api/auth/logout")
+        self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 200)
+
+    def test_admin_and_profile(self):
+        boss, user, other = app.test_client(), app.test_client(), app.test_client()
+        for client, name in ((boss, "boss1"), (user, "writer1"), (other, "viewer1")):
+            self.c = client
+            self.register(name)
+        self.assertTrue(boss.get("/api/auth/me").json["isAdmin"])
+        self.assertFalse(user.get("/api/auth/me").json["isAdmin"])
+        self.assertEqual(user.get("/api/admin/users").status_code, 403)
+
+        data = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
+        tid = user.post("/api/templates", json={"name": "숨길 집", "data": data}).json["id"]
+        self.assertEqual(other.post(f"/api/library/{tid}").status_code, 200)
+        prof = user.get("/api/profile").json
+        # 올린 템플릿은 작성자 보관함에도 자동으로 담기므로 담기 수는 2
+        self.assertEqual((prof["stats"]["uploads"], prof["stats"]["savesReceived"]), (1, 2))
+
+        # 템플릿 비활성화: 일반 사용자 목록·상세·보관함에서 사라지고, 작성자·관리자는 본다
+        self.assertEqual(boss.post(f"/api/admin/templates/{tid}/active", json={"active": False}).status_code, 200)
+        ids = lambda c: [t["id"] for t in c.get("/api/templates").json["templates"]]
+        self.assertNotIn(tid, ids(other))
+        self.assertEqual(other.get(f"/api/templates/{tid}").status_code, 404)
+        self.assertEqual(other.get("/api/library").json, [])
+        self.assertEqual(other.post(f"/api/library/{tid}").status_code, 404)
+        self.assertEqual(user.get(f"/api/templates/{tid}").status_code, 200)
+        self.assertFalse(user.get("/api/profile").json["uploads"][0]["active"])
+        self.assertIn(tid, [t["id"] for t in boss.get("/api/admin/templates").json])
+        # 다시 활성화하면 보관함에도 돌아온다
+        boss.post(f"/api/admin/templates/{tid}/active", json={"active": True})
+        self.assertEqual([t["id"] for t in other.get("/api/library").json], [tid])
+        # 기본 템플릿은 삭제 불가
+        builtin = next(t for t in boss.get("/api/admin/templates").json if t["builtin"])
+        self.assertEqual(boss.delete(f"/api/admin/templates/{builtin['id']}").status_code, 400)
+
+        # 회원 비활성화: 세션이 끊기고 로그인 불가
+        wid = user.get("/api/auth/me").json["id"]
+        row = next(u for u in boss.get("/api/admin/users").json if u["id"] == wid)
+        self.assertEqual((row["uploadCount"], row["status"]), (1, "verified"))
+        boss.post(f"/api/admin/users/{wid}/active", json={"active": False})
+        self.assertIsNone(user.get("/api/auth/me").json)
+        r = user.post("/api/auth/login", json={"username": "writer1", "password": "password123"})
+        self.assertEqual(r.status_code, 403)
+        # 관리자 자신은 비활성화·삭제 불가
+        bid = boss.get("/api/auth/me").json["id"]
+        self.assertEqual(boss.post(f"/api/admin/users/{bid}/active", json={"active": False}).status_code, 400)
+        self.assertEqual(boss.delete(f"/api/admin/users/{bid}").status_code, 400)
+        # 회원 삭제: 올린 템플릿도 함께 삭제
+        self.assertEqual(boss.delete(f"/api/admin/users/{wid}").status_code, 200)
+        self.assertNotIn(tid, [t["id"] for t in boss.get("/api/admin/templates").json])
+
+        # 비밀번호 변경
+        self.assertEqual(other.post("/api/auth/password", json={"current": "nope", "new": "newpass123"}).status_code, 403)
+        self.assertEqual(other.post("/api/auth/password", json={"current": "password123", "new": "newpass123"}).status_code, 200)
+        other.post("/api/auth/logout")
+        self.assertEqual(other.post("/api/auth/login", json={"username": "viewer1", "password": "newpass123"}).status_code, 200)
+
+    def test_server_key_scope(self):
+        # 서버 주인 A, B 가 각자 키를 받는다
+        a, b = app.test_client(), app.test_client()
+        for client, name in ((a, "owner_a"), (b, "owner_b")):
+            self.c = client
+            self.register(name)
+        self.assertIsNone(a.get("/api/server-key").json)
+        key_a = a.post("/api/server-key").json["key"]
+        key_b = b.post("/api/server-key").json["key"]
+        self.assertTrue(key_a.startswith("bp_"))
+        self.assertEqual(a.get("/api/server-key").json["prefix"], key_a[:8])
+        ha, hb = {"Authorization": f"Bearer {key_a}"}, {"Authorization": f"Bearer {key_b}"}
+
+        # 플레이어가 A 서버에서 연동
+        self.c = app.test_client()
+        self.register("player_a")
+        mc = str(uuid.uuid4())
+        code = self.c.post("/api/link/code").json["code"]
+        self.assertEqual(self.c.post("/api/plugin/link", json={"code": code, "uuid": mc, "name": "P"},
+                                     headers=ha).status_code, 200)
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=ha).status_code, 200)
+        # B 키로는 남의 서버 플레이어를 못 본다 / 해제·업로드 불가
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=hb).status_code, 404)
+        self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/unlink", headers=hb).status_code, 404)
+        data = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
+        self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/templates", json={"name": "x", "data": data},
+                                     headers=hb).status_code, 404)
+        # 운영자 키는 전체 접근
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=PLUGIN).status_code, 200)
+        self.assertEqual(a.get("/api/server-key").json["players"], 1)
+        # 키를 새로 받으면 옛 키는 막히고, 연동은 새 키로 이어진다
+        new_a = a.post("/api/server-key").json["key"]
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=ha).status_code, 401)
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library",
+                                    headers={"Authorization": f"Bearer {new_a}"}).status_code, 200)
+        # 로그인 없이 키 발급 불가
+        self.assertEqual(app.test_client().post("/api/server-key").status_code, 401)
 
     def test_full_flow(self):
         templates = self.c.get("/api/templates").json["templates"]
@@ -95,7 +222,8 @@ class FlowTest(unittest.TestCase):
     def test_auth_errors(self):
         self.register("builder3")
         self.c.post("/api/auth/logout")
-        r = self.c.post("/api/auth/register", json={"username": "builder3", "password": "password123"})
+        r = self.c.post("/api/auth/register",
+                        json={"username": "builder3", "email": "other3@example.com", "password": "password123"})
         self.assertEqual(r.status_code, 409)
         r = self.c.post("/api/auth/login", json={"username": "builder3", "password": "wrongpass"})
         self.assertEqual(r.status_code, 401)

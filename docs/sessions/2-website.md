@@ -22,19 +22,22 @@
 - db.init_db: 기본 템플릿을 코드(seed.seed_templates)와 동기화. 코드에서 빠진 기본 템플릿은 DB에서 삭제
 - 템플릿 검사: template_format.validate() 가 26.3 레지스트리(data/blocks-26.3.json)로 블록·속성 검사
 - 썸네일: thumbnail.py 가 client.jar 블록 모델로 등각 PNG 렌더, 시작할 때 미리 렌더
-  에셋 받기: .venv/Scripts/python tools/fetch_assets.py (SHA1 검증, web/instance/assets, 약 14MB)
+  에셋 받기: .venv/Scripts/python tools/fetch_assets.py (SHA1 검증, ~/.blueprint/assets 에 한 번만, 약 12MB, ASSETS_DIR 로 변경)
 - 재료 목록: materials.py (블록 상태 → 아이템 개수, ko_kr 한국어 이름, 아이콘)
 - 화면: static/index.html(목록) template.html(상세·재료·회전/높이 뷰어) library.html login/register upload
 
 API
-- /api/auth/register|login|logout|me
+- /api/auth/register(이메일 필수, 인증 메일 발송)|login(인증 전 403)|logout|me, GET /verify?token= (메일 링크)
 - /api/templates (GET 목록, POST 업로드), /api/templates/<id> (GET, DELETE), .../thumbnail.png?rot&maxY
 - /api/library, /api/library/<id> (POST 담기, DELETE 빼기)
 - /api/link/code (POST 6자리 연동 코드), /api/link (DELETE)
+- /api/profile (내 프로필·통계·올린 템플릿), /api/auth/password (POST 비밀번호 변경)
+- /api/admin/users, /api/admin/templates (GET 목록), .../<id>/active (POST {active}), .../<id> (DELETE). ADMIN_USERS 환경변수의 아이디만. 비활성 템플릿은 작성자·관리자만 보고, 비활성 회원은 로그인·플러그인 차단. 회원 삭제 시 올린 템플릿도 삭제, 기본 템플릿은 삭제 불가(비활성화만)
+- /api/server-key (GET 정보, POST 발급·재발급): 회원 서버 키. 플러그인 API는 운영자 키(전체) 또는 회원 키(그 키로 연동한 플레이어만)
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
-테스트: cd web; .venv/Scripts/python -m unittest test_app  (9개)
+테스트: cd web; .venv/Scripts/python -m unittest test_app  (12개)
 운영 실행: deploy/README.md (PRODUCTION / COOKIE_SECURE / TRUST_PROXY 환경변수)
 ```
 

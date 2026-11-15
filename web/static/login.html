@@ -28,6 +28,10 @@
         return u.origin === location.origin ? u.pathname + u.search : "/library";
       } catch { return "/library"; }
     })();
+    if (new URLSearchParams(location.search).get("verify") === "invalid") {
+      document.getElementById("error").textContent =
+        "인증 링크가 잘못됐거나 만료됐어요. 로그인하면 인증 메일을 다시 보내 드려요.";
+    }
     document.getElementById("form").onsubmit = async (e) => {
       e.preventDefault();
       try {
