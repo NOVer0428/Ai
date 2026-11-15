@@ -85,6 +85,21 @@ cd plugin
 - **정면(입구)은 z = 0 쪽, 북쪽(-z)을 향하도록** 만듭니다. 플러그인이 플레이어 방향에 맞게 회전합니다.
 - 상자 내용물·표지판 글씨 같은 블록 엔티티 데이터는 저장하지 않습니다.
 
+### 구조물 파일 변환 (.nbt / .schem → 템플릿 JSON)
+
+바닐라 구조물 파일(`.nbt`, 구조물 블록이나 minecraft-builder-skill 출력)과 Sponge 스키매틱(`.schem` v2/v3, WorldEdit 출력)을 업로드용 JSON으로 바꿉니다. 표준 라이브러리만 씁니다.
+
+```bash
+cd web
+python nbt_to_template.py cottage.nbt --facing south   # → cottage.json
+```
+
+- `--facing`: 원본 건물의 **입구가 바라보는 방향** (`north`/`east`/`south`/`west`, 기본 `north`). 입구가 z = 0 쪽에서 북쪽을 보도록 건물을 돌리고, 블록 상태(`facing`, `axis`, `rotation`, 울타리·벽 연결, 레일 모양 등)도 함께 돌립니다.
+- 공기와 `structure_void` 는 빼고 빈 여백은 잘라냅니다 (`--no-crop` 으로 끔).
+- 결과는 업로드와 같은 검사(`template_format.validate`)를 거칩니다. 크기 한도(각 축 128칸)를 넘거나 `minecraft:` 이외의 블록(모드 블록)이 있으면 실패합니다.
+- 블록 이름은 바꾸지 않으므로 옛 버전 파일의 이름이 바뀐 블록(예: `grass` → `short_grass`)은 플러그인이 짓지 못합니다.
+- 테스트: `python -m unittest test_nbt_to_template`
+
 ## 플러그인 API (웹사이트 쪽)
 
 모든 요청에 `Authorization: Bearer <플러그인 API 키>` 필요.
