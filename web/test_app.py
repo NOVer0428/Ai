@@ -57,6 +57,34 @@ class FlowTest(unittest.TestCase):
         self.c.post("/api/auth/logout")
         self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 200)
 
+    def test_email_code(self):
+        body = {"username": "codeuser1", "email": "codeuser1@example.com", "password": "password123"}
+        self.assertEqual(self.c.post("/api/auth/register", json=body).status_code, 201)
+        code = re.search(r"인증 코드: (\d{6})", next(t for to, _, t in reversed(MAILS)
+                                                     if to == "codeuser1@example.com")).group(1)
+        wrong = "000000" if code != "000000" else "111111"
+        r = self.c.post("/api/auth/verify-code", json={"username": "CodeUser1", "code": wrong})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("4번", r.json["error"])
+        # 인증 전 로그인 → 코드 입력 화면용 정보
+        r = self.c.post("/api/auth/login", json={"username": "codeuser1", "password": "password123"})
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(r.json["needsVerify"])
+        r = self.c.post("/api/auth/verify-code", json={"username": "codeuser1", "code": code})
+        self.assertEqual(r.status_code, 200, r.json)
+        self.assertEqual(self.c.get("/api/auth/me").json["username"], "codeuser1")
+        # 이미 인증됨 → 다시 쓸 수 없음
+        self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "codeuser1", "code": code}).status_code, 404)
+
+        # 5번 틀리면 맞는 코드도 거절
+        body = {"username": "codeuser2", "email": "codeuser2@example.com", "password": "password123"}
+        self.c.post("/api/auth/register", json=body)
+        code = re.search(r"인증 코드: (\d{6})", MAILS[-1][2]).group(1)
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            self.c.post("/api/auth/verify-code", json={"username": "codeuser2", "code": wrong})
+        self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "codeuser2", "code": code}).status_code, 429)
+
     def test_admin_and_profile(self):
         boss, user, other = app.test_client(), app.test_client(), app.test_client()
         for client, name in ((boss, "boss1"), (user, "writer1"), (other, "viewer1")):

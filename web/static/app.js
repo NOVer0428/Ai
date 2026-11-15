@@ -8,7 +8,7 @@ const App = (() => {
     }
     const res = await fetch(path, opts);
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw Object.assign(new Error(data?.error || `요청 실패 (${res.status})`), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(data?.error || `요청 실패 (${res.status})`), { status: res.status, data });
     return data;
   }
 
@@ -252,5 +252,39 @@ const App = (() => {
   }, { rootMargin: "200px" });
   const observePreviews = (root) => root.querySelectorAll("canvas[data-preview]").forEach((c) => io.observe(c));
 
-  return { api, me, esc, header, toast, requireLogin, render, blockColor, cardHTML, saveButton, bindSaveButtons, observePreviews, loadData };
+  // 가입·로그인 폼 자리에 6자리 인증 코드 입력 화면을 띄운다. 재전송은 같은 아이디·비밀번호로 로그인을 다시 시도한다.
+  function verifyForm(form, { username, email, password, notice }) {
+    form.innerHTML = `<h1>인증 코드 입력</h1>
+      <p><b>${esc(email)}</b>(으)로 보낸 6자리 코드를 입력하세요.</p>
+      <p class="hint">${esc(notice || "코드는 30분 동안 유효해요. 메일이 안 보이면 스팸함도 확인해 주세요. 메일의 링크를 눌러도 돼요.")}</p>
+      <label for="code">인증 코드</label>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required
+        style="font-family:var(--mono);font-size:26px;letter-spacing:.4em;text-align:center">
+      <button class="btn primary" type="submit">인증하고 시작하기</button>
+      ${password ? `<button class="btn ghost" type="button" id="resend">코드 다시 받기</button>` : ""}
+      <div class="error" id="error" role="alert"></div>`;
+    const error = form.querySelector("#error");
+    const input = form.querySelector("#code");
+    input.oninput = () => { input.value = input.value.replace(/\D/g, "").slice(0, 6); };
+    input.focus();
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api("/api/auth/verify-code", { method: "POST", body: { username, code: input.value } });
+        location.href = "/library?verified=1";
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    };
+    form.querySelector("#resend")?.addEventListener("click", async () => {
+      try {
+        await api("/api/auth/login", { method: "POST", body: { username, password } });
+        location.href = "/library";  // 그사이 링크로 인증을 마친 경우
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    });
+  }
+
+  return { api, me, esc, header, toast, requireLogin, verifyForm, render, blockColor, cardHTML, saveButton, bindSaveButtons, observePreviews, loadData };
 })();

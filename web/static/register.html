@@ -40,11 +40,8 @@
           username: document.getElementById("username").value,
           email: document.getElementById("email").value, password,
         }});
-        document.getElementById("form").innerHTML = `<h1>메일함을 확인해 주세요</h1>
-          <p><b>${App.esc(r.email)}</b>(으)로 인증 메일을 보냈어요.</p>
-          <p class="hint">메일의 링크를 누르면 가입이 끝나고 바로 로그인돼요. 링크는 24시간 동안 유효해요.
-          메일이 안 보이면 스팸함도 확인해 주세요.</p>
-          <a class="btn ghost" href="/login">로그인 화면으로</a>`;
+        App.verifyForm(document.getElementById("form"),
+          { username: document.getElementById("username").value.trim(), email: r.email, password });
       } catch (err) {
         error.textContent = err.message;
       }

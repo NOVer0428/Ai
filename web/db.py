@@ -59,6 +59,8 @@ USER_COLUMNS = {
     "email": "TEXT",
     "verified_at": "INTEGER",       # NULL 이고 email 이 있으면 인증 전. 이메일 없는 옛 계정은 인증 면제
     "verify_sent_at": "INTEGER",
+    "verify_code_hash": "TEXT",          # 메일로 보낸 6자리 코드의 해시 (verify_sent_at 기준으로 만료)
+    "verify_attempts": "INTEGER NOT NULL DEFAULT 0",
     "link_key_id": "INTEGER REFERENCES server_keys(id) ON DELETE SET NULL",  # 어느 서버 키로 연동했는지
 }
 

@@ -182,7 +182,9 @@ FROM templates t LEFT JOIN users u ON u.id = t.author_id
 
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
 VERIFY_TTL = 24 * 60 * 60
-RESEND_GAP = 10 * 60  # 남의 이메일로 가입해 로그인을 반복하는 메일 폭탄 완화
+RESEND_GAP = 3 * 60  # 남의 이메일로 가입해 로그인을 반복하는 메일 폭탄 완화 (24시간 뒤 미인증 가입은 삭제)
+CODE_TTL = 30 * 60
+CODE_MAX_TRIES = 5   # 코드 하나당 틀릴 수 있는 횟수. 넘으면 새 코드를 받아야 한다
 verify_tokens = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="email-verify")
 
 
@@ -204,14 +206,29 @@ def send_mail(to, subject, text):
         s.send_message(msg)
 
 
+def code_hash(user_id, code):
+    return hashlib.sha256(f"{user_id}:{code}".encode()).hexdigest()
+
+
 def send_verify_mail(user_id, email):
+    """6자리 코드와 링크를 함께 보낸다. 새로 보내면 이전 코드는 무효."""
+    code = f"{secrets.randbelow(10**6):06d}"
     token = verify_tokens.dumps({"uid": user_id, "email": email})
     link = request.host_url.rstrip("/") + "/verify?token=" + token
-    send_mail(email, "[블루프린트] 이메일 인증",
-              f"아래 링크를 누르면 가입이 완료됩니다. 링크는 24시간 동안 유효합니다.\n\n{link}\n\n"
+    send_mail(email, f"[블루프린트] 인증 코드 {code}",
+              f"인증 코드: {code}\n\n가입 화면에 위 6자리 코드를 입력하세요. 코드는 30분 동안 유효합니다.\n\n"
+              f"코드 대신 아래 링크를 눌러도 됩니다(24시간 유효).\n{link}\n\n"
               "직접 가입하지 않았다면 이 메일을 무시하세요.")
-    db.get_db().execute("UPDATE users SET verify_sent_at = ? WHERE id = ?", (int(time.time()), user_id))
+    db.get_db().execute(
+        "UPDATE users SET verify_sent_at = ?, verify_code_hash = ?, verify_attempts = 0 WHERE id = ?",
+        (int(time.time()), code_hash(user_id, code), user_id))
     db.get_db().commit()
+
+
+def log_in(user):
+    session.clear()
+    session.permanent = True
+    session["uid"] = user["id"]
 
 
 def mask_email(email):
@@ -270,12 +287,39 @@ def verify_email():
     if user is None:
         return redirect("/login?verify=invalid")
     if user["verified_at"] is None:
-        conn.execute("UPDATE users SET verified_at = ? WHERE id = ?", (int(time.time()), user["id"]))
+        conn.execute("UPDATE users SET verified_at = ?, verify_code_hash = NULL WHERE id = ?",
+                     (int(time.time()), user["id"]))
         conn.commit()
-    session.clear()
-    session.permanent = True
-    session["uid"] = user["id"]
+    log_in(user)
     return redirect("/library?verified=1")
+
+
+@app.post("/api/auth/verify-code")
+def verify_code():
+    data = body()
+    code = str(data.get("code", "")).strip()
+    conn = db.get_db()
+    user = conn.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE AND email IS NOT NULL"
+                        " AND verified_at IS NULL AND active = 1",
+                        (str(data.get("username", "")).strip(),)).fetchone()
+    if user is None or not user["verify_code_hash"]:
+        return err("인증할 가입 정보가 없어요. 이미 인증했다면 로그인해 주세요.", 404)
+    if user["verify_attempts"] >= CODE_MAX_TRIES:
+        return err("코드를 너무 많이 틀렸어요. 새 코드를 받아 주세요.", 429)
+    if time.time() - (user["verify_sent_at"] or 0) > CODE_TTL:
+        return err("코드가 만료됐어요. 새 코드를 받아 주세요.", 410)
+    if not (re.fullmatch(r"\d{6}", code)
+            and hmac.compare_digest(code_hash(user["id"], code), user["verify_code_hash"])):
+        conn.execute("UPDATE users SET verify_attempts = verify_attempts + 1 WHERE id = ?", (user["id"],))
+        conn.commit()
+        left = CODE_MAX_TRIES - user["verify_attempts"] - 1
+        return err(f"코드가 맞지 않아요. {left}번 더 시도할 수 있어요." if left
+                   else "코드를 너무 많이 틀렸어요. 새 코드를 받아 주세요.", 400)
+    conn.execute("UPDATE users SET verified_at = ?, verify_code_hash = NULL WHERE id = ?",
+                 (int(time.time()), user["id"]))
+    conn.commit()
+    log_in(user)
+    return jsonify(user_json(current_user()))
 
 
 # shortcut: 실패 기록을 프로세스 메모리에 둔다(재시작하면 초기화, 워커 1개 기준). 워커를 늘리면 DB로 옮긴다.
@@ -315,8 +359,11 @@ def login():
             except Exception as e:
                 app.logger.error("인증 메일 재전송 실패: %s", e)
         else:
-            msg += f" {mask_email(user['email'])} 메일함을 확인해 주세요."
-        return err(msg, 403)
+            wait = RESEND_GAP - (now - (user["verify_sent_at"] or 0))
+            msg += f" {mask_email(user['email'])} 메일함을 확인해 주세요. 새 코드는 {int(wait // 60) + 1}분 뒤에 받을 수 있어요."
+        # 화면이 바로 코드 입력 칸을 띄울 수 있게 알려 준다
+        return jsonify({"error": msg, "needsVerify": True, "username": user["username"],
+                        "email": mask_email(user["email"])}), 403
     session.clear()
     session.permanent = True
     session["uid"] = user["id"]

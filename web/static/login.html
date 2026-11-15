@@ -41,6 +41,11 @@
         }});
         location.href = safeNext;
       } catch (err) {
+        if (err.data?.needsVerify) {
+          App.verifyForm(document.getElementById("form"), { username: err.data.username, email: err.data.email,
+            password: document.getElementById("password").value, notice: err.message });
+          return;
+        }
         document.getElementById("error").textContent = err.message;
       }
     };

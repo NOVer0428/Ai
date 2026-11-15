@@ -27,7 +27,7 @@
 - 화면: static/index.html(목록) template.html(상세·재료·회전/높이 뷰어) library.html login/register upload
 
 API
-- /api/auth/register(이메일 필수, 인증 메일 발송)|login(인증 전 403)|logout|me, GET /verify?token= (메일 링크)
+- /api/auth/register(이메일 필수, 코드+링크 메일)|verify-code(POST 6자리 코드)|login(인증 전 403 + needsVerify)|logout|me, GET /verify?token= (메일 링크)
 - /api/templates (GET 목록, POST 업로드), /api/templates/<id> (GET, DELETE), .../thumbnail.png?rot&maxY
 - /api/library, /api/library/<id> (POST 담기, DELETE 빼기)
 - /api/link/code (POST 6자리 연동 코드), /api/link (DELETE)
@@ -37,7 +37,7 @@ API
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
-테스트: cd web; .venv/Scripts/python -m unittest test_app  (12개)
+테스트: cd web; .venv/Scripts/python -m unittest test_app  (13개)
 운영 실행: deploy/README.md (PRODUCTION / COOKIE_SECURE / TRUST_PROXY 환경변수)
 ```
 
