@@ -1,12 +1,14 @@
 """실제 마인크래프트 26.3 블록 텍스처·모델로 템플릿 썸네일(아이소메트릭 PNG)을 그린다.
 
-에셋은 tools/fetch_assets.py 로 Mojang 공식 client.jar 에서 꺼낸 web/instance/assets 를 쓴다.
+에셋은 tools/fetch_assets.py 로 Mojang 공식 client.jar 에서 꺼낸 ~/.blueprint/assets 를 쓴다
+(ASSETS_DIR 환경변수로 바꿀 수 있음). 작업 폴더(worktree)마다 다시 받지 않도록 저장소 밖에 둔다.
 blockstates → models(부모 상속) → elements(직육면체) 를 따라가며 각 면을 텍스처로 그려서
 계단·문·유리판·랜턴 같은 블록도 실제 모양대로 나온다.
 """
 import hashlib
 import json
 import math
+import os
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 BASE = Path(__file__).parent
-ASSETS = BASE / "instance" / "assets"
+ASSETS = Path(os.environ.get("ASSETS_DIR") or Path.home() / ".blueprint" / "assets")  # tools/fetch_assets.py 와 같게
 CACHE = BASE / "instance" / "thumbs"
 RENDER_VERSION = "4"  # 렌더러가 바뀌면 올려서 캐시 무효화
 

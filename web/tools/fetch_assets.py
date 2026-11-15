@@ -1,14 +1,15 @@
 """Mojang 공식 26.3 client.jar 에서 썸네일 렌더링에 필요한 블록 에셋만 꺼낸다.
 
-    python tools/fetch_assets.py            # web/instance/assets 에 저장
+    python tools/fetch_assets.py            # ~/.blueprint/assets 에 저장 (ASSETS_DIR 로 변경)
 
 꺼내는 것: assets/minecraft/{blockstates, models/block, textures/block, textures/item,
           textures/colormap, lang/en_us.json} + 공식 에셋 서버의 lang/ko_kr.json (아이템 한국어 이름)
-Mojang 에셋이므로 저장소에는 커밋하지 않는다 (web/instance/ 는 .gitignore).
+Mojang 에셋이므로 저장소 밖에 둔다. 작업 폴더(worktree)가 여러 개여도 한 번만 받으면 된다.
 """
 import hashlib
 import io
 import json
+import os
 import sys
 import urllib.request
 import zipfile
@@ -16,7 +17,7 @@ from pathlib import Path
 
 VERSION = "26.3"
 MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
-OUT = Path(__file__).resolve().parent.parent / "instance" / "assets"
+OUT = Path(os.environ.get("ASSETS_DIR") or Path.home() / ".blueprint" / "assets")  # thumbnail.ASSETS 와 같게
 KEEP = ("assets/minecraft/blockstates/", "assets/minecraft/models/block/",
         "assets/minecraft/textures/block/", "assets/minecraft/textures/item/",
         "assets/minecraft/textures/colormap/", "assets/minecraft/lang/en_us.json")

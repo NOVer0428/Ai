@@ -25,7 +25,7 @@ py -m venv .venv
 ```
 
 - (선택, 권장) 실제 블록 텍스처 썸네일: `.venv/Scripts/python tools/fetch_assets.py`
-  - Mojang 공식 26.3 client.jar(약 41MB)를 받아 SHA1 확인 후 블록 텍스처·모델만 `web/instance/assets/`에 꺼냅니다 (저장소에는 커밋하지 않음).
+  - Mojang 공식 26.3 client.jar(약 41MB)를 받아 SHA1 확인 후 블록 텍스처·모델만 `~/.blueprint/assets/`에 꺼냅니다 (저장소 밖이라 작업 폴더가 여러 개여도 한 번만 받으면 됨, `ASSETS_DIR`로 변경 가능).
   - 없으면 단순 색상 미리보기로 표시됩니다.
 - http://127.0.0.1:5000 접속. 처음 실행하면 기본 템플릿 5개가 들어갑니다.
 - 실행 시 콘솔에 **플러그인 API 키**가 출력되고 `web/instance/plugin_api_key.txt` 에 저장됩니다.
