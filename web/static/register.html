@@ -17,11 +17,20 @@
       <div class="hint">3~20자, 영문·숫자·한글·_</div>
       <label for="email">이메일</label>
       <input id="email" type="email" autocomplete="email" required maxlength="254">
-      <div class="hint">가입을 마치려면 이 주소로 오는 인증 메일의 링크를 눌러야 해요.</div>
+      <div class="hint">가입을 마치려면 이 주소로 오는 6자리 인증 코드를 입력해야 해요.</div>
       <label for="password">비밀번호</label>
       <input id="password" type="password" autocomplete="new-password" required minlength="8">
       <label for="password2">비밀번호 확인</label>
       <input id="password2" type="password" autocomplete="new-password" required minlength="8">
+      <fieldset class="agree">
+        <legend class="sr">약관 동의</legend>
+        <label class="agree-all"><input type="checkbox" id="agreeAll"> 전체 동의</label>
+        <label><input type="checkbox" id="agreeTerms" required> <span>[필수] 이용약관 동의</span>
+          <a href="/terms#service" target="_blank" rel="noopener">보기</a></label>
+        <label><input type="checkbox" id="agreePrivacy" required> <span>[필수] 개인정보 수집·이용 동의</span>
+          <a href="/terms#privacy" target="_blank" rel="noopener">보기</a></label>
+        <p class="hint">수집 항목: 아이디, 이메일, 비밀번호(암호화) · 목적: 회원 관리·인증 · 보유: 탈퇴할 때까지. 동의하지 않으면 가입할 수 없어요.</p>
+      </fieldset>
       <button class="btn primary" type="submit">가입하기</button>
       <div class="error" id="error"></div>
     </form>
@@ -29,6 +38,11 @@
   <script src="/app.js"></script>
   <script>
     App.header();
+    // 전체 동의 ↔ 개별 동의 체크 맞추기
+    const agreeAll = document.getElementById("agreeAll");
+    const agreeEach = [document.getElementById("agreeTerms"), document.getElementById("agreePrivacy")];
+    agreeAll.onchange = () => agreeEach.forEach((c) => { c.checked = agreeAll.checked; });
+    agreeEach.forEach((c) => c.onchange = () => { agreeAll.checked = agreeEach.every((x) => x.checked); });
     document.getElementById("form").onsubmit = async (e) => {
       e.preventDefault();
       const error = document.getElementById("error");
@@ -41,6 +55,8 @@
         const r = await App.api("/api/auth/register", { method: "POST", body: {
           username: document.getElementById("username").value,
           email: document.getElementById("email").value, password,
+          agreeTerms: document.getElementById("agreeTerms").checked,
+          agreePrivacy: document.getElementById("agreePrivacy").checked,
         }});
         App.verifyForm(document.getElementById("form"),
           { username: document.getElementById("username").value.trim(), email: r.email, password });

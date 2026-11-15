@@ -249,6 +249,7 @@ FROM templates t LEFT JOIN users u ON u.id = t.author_id
 
 # ---------------------------------------------------------------- auth
 
+TERMS_VERSION = "2026-11-16"  # static/terms.html 의 버전과 같게
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
 VERIFY_TTL = 24 * 60 * 60
 RESEND_GAP = 3 * 60  # 남의 이메일로 가입해 로그인을 반복하는 메일 폭탄 완화 (24시간 뒤 미인증 가입은 삭제)
@@ -332,6 +333,8 @@ def register():
         return err("올바른 이메일 주소를 입력해 주세요.")
     if not 8 <= len(password) <= 128:
         return err("비밀번호는 8자 이상이어야 합니다.")
+    if data.get("agreeTerms") is not True or data.get("agreePrivacy") is not True:
+        return err("이용약관과 개인정보 수집·이용에 모두 동의해야 가입할 수 있어요.")
     conn = db.get_db()
     # 링크 유효시간이 지나도록 인증하지 않은 가입은 지워서 아이디·이메일을 다시 쓸 수 있게 한다
     conn.execute("DELETE FROM users WHERE email IS NOT NULL AND verified_at IS NULL AND created_at < ?",
@@ -343,8 +346,9 @@ def register():
         return err("이미 사용 중인 아이디입니다." if taken[0] else "이미 가입된 이메일입니다.", 409)
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (username, email, generate_password_hash(password), int(time.time())),
+            "INSERT INTO users (username, email, password_hash, created_at, terms_version, terms_agreed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (username, email, generate_password_hash(password), int(time.time()), TERMS_VERSION, int(time.time())),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -1102,7 +1106,7 @@ def plugin_upload(mc_uuid):
 
 PAGES = {"": "index.html", "login": "login.html", "register": "register.html",
          "library": "library.html", "upload": "upload.html", "template": "template.html",
-         "profile": "profile.html", "admin": "admin.html"}
+         "profile": "profile.html", "admin": "admin.html", "terms": "terms.html"}
 
 
 @app.get("/")

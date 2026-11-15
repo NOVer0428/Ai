@@ -263,3 +263,21 @@ img, svg, canvas { -webkit-user-drag: none; user-drag: none; }
 /* 자바스크립트가 꺼져 있으면 사이트 대신 안내만 보여 준다 */
 .noscript { max-width: 520px; margin: 80px auto; padding: 28px; text-align: center; background: var(--card);
   border: 2px solid var(--ink); border-radius: var(--radius); font-weight: 700; line-height: 1.7; }
+
+/* 회원가입 약관 동의 */
+.agree { border: 1.5px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 16px 0 0; }
+.agree label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 500; cursor: pointer; }
+.agree label input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--accent); }
+.agree label span { flex: 1; }
+.agree label a { font-size: 13px; }
+.agree .agree-all { font-weight: 700; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.agree .hint { margin: 6px 0 0; }
+/* 약관 페이지 */
+.terms .panel { margin-bottom: 20px; line-height: 1.75; }
+.terms h2 { margin: 0 0 8px; }
+.terms h3 { margin: 18px 0 4px; font-size: 15px; }
+.terms p, .terms li { color: var(--ink); font-size: 14px; }
+.terms-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 12px; }
+.terms-table th, .terms-table td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+.terms-table th { color: var(--ink-soft); font-weight: 500; }
+.terms .panel { overflow-x: auto; }
