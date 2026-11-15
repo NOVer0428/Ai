@@ -45,6 +45,11 @@
 
       const STATUS = { verified: ["ok", "인증됨"], unverified: ["wait", "인증 대기"], legacy: ["off", "옛 계정"], inactive: ["off", "정지됨"] };
       const badge = (cls, text) => `<span class="badge ${cls}">${text}</span>`;
+      // 상태는 하나만: 메인 관리자 > 정지됨 > 부 관리자 > 인증 대기 > 인증됨 > 옛 계정
+      const statusBadge = (u) => u.isAdmin ? badge("admin", "메인 관리자")
+        : !u.active ? badge(...STATUS.inactive)
+        : u.role === "sub_admin" ? badge("admin", "부 관리자")
+        : badge(...STATUS[u.status]);
       // 메인 관리자: 전부. 부 관리자: 템플릿 비/활성화, 회원 정지/해제만 (삭제·권한 부여 불가)
       const isMain = me.isAdmin;
       $("permHint").innerHTML = isMain
@@ -79,7 +84,7 @@
             <tr class="${u.active ? "" : "off"}">
               <td><b>${esc(u.username)}</b></td>
               <td>${u.email ? esc(u.email) : `<span class="hint">(이메일 없음)</span>`}</td>
-              <td>${u.isAdmin ? badge("admin", "메인 관리자") : (u.role === "sub_admin" ? badge("admin", "부 관리자") + " " : "") + badge(...STATUS[u.status])}</td>
+              <td>${statusBadge(u)}</td>
               <td>${u.mcNames.length ? esc(u.mcNames.join(", ")) : "—"}</td>
               <td>${u.serverCount ? `${u.serverCount}개` : "—"}</td><td>${u.linkedServers ? `${u.linkedServers}곳` : "—"}</td>
               <td>${u.libraryCount} · ${u.uploadCount}</td>
