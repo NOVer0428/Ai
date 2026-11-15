@@ -23,7 +23,7 @@
       <input id="q" type="search" style="flex:1 1 260px;max-width:360px">
       <label for="status" class="sr">상태</label>
       <select id="status"><option value="">전체 상태</option><option value="on">활성</option><option value="off">비활성</option></select>
-      <p class="hint" style="margin:0 0 0 auto;max-width:440px">비활성은 지우지 않고 <b>일반 사용자에게만 숨겨요.</b> 다시 활성화할 수 있어요. 삭제는 되돌릴 수 없어요.</p>
+      <p class="hint" id="permHint" style="margin:0 0 0 auto;max-width:440px"></p>
     </div>
     <div class="table-box"><table class="admin" id="table"></table></div>
     <p class="hint" id="note" style="margin:10px 0 60px"></p>
@@ -34,7 +34,7 @@
       const me = await App.header("admin");
       if (!App.requireLogin(me)) return;
       const main = document.getElementById("main");
-      if (!me.isAdmin) {
+      if (!me.isStaff) {
         main.innerHTML = `<div class="empty" style="margin-top:40px">관리자만 볼 수 있는 페이지예요.</div>`;
         return;
       }
@@ -43,11 +43,25 @@
       const date = (s) => new Date(s * 1000).toLocaleDateString("ko-KR");
       let tab = location.hash === "#templates" ? "templates" : "users", users = [], templates = [];
 
-      const STATUS = { verified: ["ok", "인증됨"], unverified: ["wait", "인증 대기"], legacy: ["off", "옛 계정"], inactive: ["off", "비활성"] };
+      const STATUS = { verified: ["ok", "인증됨"], unverified: ["wait", "인증 대기"], legacy: ["off", "옛 계정"], inactive: ["off", "정지됨"] };
       const badge = (cls, text) => `<span class="badge ${cls}">${text}</span>`;
-      const actions = (item, name) => `<div class="row-actions">
-          <button class="btn ghost" data-act="toggle" data-id="${item.id}">${item.active ? "비활성화" : "활성화"}</button>
-          <button class="btn danger" data-act="delete" data-id="${item.id}" aria-label="${esc(name)} 삭제">삭제</button></div>`;
+      // 메인 관리자: 전부. 부 관리자: 템플릿 비/활성화, 회원 정지/해제만 (삭제·권한 부여 불가)
+      const isMain = me.isAdmin;
+      $("permHint").innerHTML = isMain
+        ? "비활성·정지는 지우지 않고 <b>일반 사용자에게만 숨기거나 막아요.</b> 다시 풀 수 있어요. 삭제는 되돌릴 수 없어요."
+        : "<b>부 관리자</b>는 템플릿 비활성화/활성화와 회원 정지/해제만 할 수 있어요. 삭제와 권한 부여는 메인 관리자만 해요.";
+      const delBtn = (item, name) => isMain
+        ? `<button class="btn danger" data-act="delete" data-id="${item.id}" aria-label="${esc(name)} 삭제">삭제</button>` : "";
+      const tplActions = (t) => `<div class="row-actions">
+          <button class="btn ghost" data-act="toggle" data-id="${t.id}">${t.active ? "비활성화" : "활성화"}</button>${delBtn(t, t.name)}</div>`;
+      const userActions = (u) => {
+        if (u.isAdmin || (u.role === "sub_admin" && !isMain)) return `<span class="hint">—</span>`;
+        const role = isMain ? (u.role === "sub_admin"
+          ? `<button class="btn ghost" data-act="role" data-id="${u.id}">부 관리자 해제</button>`
+          : `<button class="btn ghost" data-act="role" data-id="${u.id}">부 관리자 지정</button>`) : "";
+        return `<div class="row-actions">
+          <button class="btn ghost" data-act="toggle" data-id="${u.id}">${u.active ? "정지" : "정지 해제"}</button>${role}${delBtn(u, u.username)}</div>`;
+      };
 
       function render() {
         const q = $("q").value.trim().toLowerCase(), st = $("status").value;
@@ -58,21 +72,22 @@
         $("tabTemplates").textContent = `템플릿 ${templates.length}`;
         if (tab === "users") {
           $("q").placeholder = "아이디, 이메일, 마크 닉네임";
-          $("summary").textContent = `회원 ${users.length}명 · 비활성 ${users.filter((u) => !u.active).length}명`;
+          $("summary").textContent = `회원 ${users.length}명 · 정지 ${users.filter((u) => !u.active).length}명 · 부 관리자 ${users.filter((u) => u.role === "sub_admin").length}명`;
           const rows = users.filter((u) => keep(u, [u.username, u.email, ...u.mcNames].join(" ")));
           $("table").innerHTML = `<thead><tr><th>회원</th><th>이메일</th><th>상태</th><th>마인크래프트</th><th>내 서버</th><th>연동 서버</th>
               <th>보관함 · 업로드</th><th>가입일</th><th>관리</th></tr></thead><tbody>${rows.map((u) => `
             <tr class="${u.active ? "" : "off"}">
               <td><b>${esc(u.username)}</b></td>
               <td>${u.email ? esc(u.email) : `<span class="hint">(이메일 없음)</span>`}</td>
-              <td>${u.isAdmin ? badge("admin", "관리자") : badge(...STATUS[u.status])}</td>
+              <td>${u.isAdmin ? badge("admin", "메인 관리자") : (u.role === "sub_admin" ? badge("admin", "부 관리자") + " " : "") + badge(...STATUS[u.status])}</td>
               <td>${u.mcNames.length ? esc(u.mcNames.join(", ")) : "—"}</td>
               <td>${u.serverCount ? `${u.serverCount}개` : "—"}</td><td>${u.linkedServers ? `${u.linkedServers}곳` : "—"}</td>
               <td>${u.libraryCount} · ${u.uploadCount}</td>
               <td class="mono">${date(u.createdAt)}</td>
-              <td>${u.isAdmin ? `<span class="hint">—</span>` : actions(u, u.username)}</td>
+              <td>${userActions(u)}</td>
             </tr>`).join("") || `<tr><td colspan="9" class="hint">조건에 맞는 회원이 없어요.</td></tr>`}</tbody>`;
-          $("note").textContent = "비활성 회원: 로그인 불가, 플러그인 연동·서버 키 중지. 삭제하면 계정, 보관함, 올린 템플릿이 모두 지워져요.";
+          $("note").textContent = "정지된 회원: 로그인 불가, 플러그인 연동·서버 키 중지. 정지 해제하면 그대로 돌아와요."
+            + (isMain ? " 삭제하면 계정, 보관함, 올린 템플릿이 모두 지워져요. 부 관리자 지정은 실수를 막기 위해 두 번 눌러야 적용돼요." : "");
         } else {
           $("q").placeholder = "템플릿 이름, 작성자";
           $("summary").textContent = `템플릿 ${templates.length}개 · 비활성 ${templates.filter((t) => !t.active).length}개`;
@@ -87,7 +102,7 @@
               <td class="mono">${t.size.join("×")} · ${t.blockCount.toLocaleString()}</td>
               <td>${t.saves}</td>
               <td class="mono">${date(t.createdAt)}</td>
-              <td>${actions(t, t.name)}</td>
+              <td>${tplActions(t)}</td>
             </tr>`).join("") || `<tr><td colspan="8" class="hint">조건에 맞는 템플릿이 없어요.</td></tr>`}</tbody>`;
           $("note").textContent = "비활성 템플릿: 목록·검색·상세에서 숨기고 새로 담을 수 없어요. 이미 담은 사람의 보관함과 인게임에서도 숨겨져요. 작성자 본인과 관리자에게는 보여요. 기본 템플릿은 비활성화만 할 수 있어요.";
         }
@@ -105,12 +120,27 @@
         const item = (kind === "users" ? users : templates).find((x) => x.id === id);
         const name = kind === "users" ? `회원 ${item.username}` : `템플릿 ${item.name}`;
         try {
-          if (b.dataset.act === "toggle") {
+          if (b.dataset.act === "role") {
+            const grant = item.role !== "sub_admin";
+            // 지정은 두 번 눌러야 적용: 첫 클릭은 버튼을 "한 번 더" 상태로 바꾸고 4초 안에 다시 눌러야 한다
+            if (grant && b.dataset.armed !== "1") {
+              b.dataset.armed = "1";
+              b.classList.add("armed");
+              b.textContent = "한 번 더 누르면 지정";
+              clearTimeout(b._t);
+              b._t = setTimeout(() => { b.dataset.armed = ""; b.classList.remove("armed"); b.textContent = "부 관리자 지정"; }, 4000);
+              return;
+            }
+            clearTimeout(b._t);
+            await App.api(`/api/admin/users/${id}/role`, { method: "POST", body: { role: grant ? "sub_admin" : null } });
+            App.toast(`${item.username}: 부 관리자 ${grant ? "지정" : "해제"}했어요.`);
+          } else if (b.dataset.act === "toggle") {
+            const verb = kind === "users" ? (item.active ? "정지" : "정지 해제") : (item.active ? "비활성화" : "활성화");
             await App.api(`/api/admin/${kind}/${id}/active`, { method: "POST", body: { active: !item.active } });
-            App.toast(`${name}: ${item.active ? "비활성화" : "활성화"}했어요.`);
+            App.toast(`${name}: ${verb}했어요.`);
           } else {
             const extra = kind === "users" ? " 올린 템플릿도 모두 지워져요." : "";
-            if (!confirm(`${name}을(를) 영구 삭제할까요? 되돌릴 수 없어요.${extra}\n숨기기만 하려면 비활성화를 쓰세요.`)) return;
+            if (!confirm(`${name}을(를) 영구 삭제할까요? 되돌릴 수 없어요.${extra}\n숨기기만 하려면 ${kind === "users" ? "정지" : "비활성화"}를 쓰세요.`)) return;
             await App.api(`/api/admin/${kind}/${id}`, { method: "DELETE" });
             App.toast(`${name}을(를) 삭제했어요.`);
           }

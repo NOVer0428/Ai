@@ -78,6 +78,18 @@ def require_json_for_writes():
 ADMINS = {n.strip().lower() for n in os.environ.get("ADMIN_USERS", "").split(",") if n.strip()}
 
 
+SUB_ADMIN = "sub_admin"
+
+
+def is_staff(user):
+    """메인 관리자 또는 부 관리자: 관리자 페이지를 볼 수 있다."""
+    return is_admin(user) or bool(user and user["role"] == SUB_ADMIN)
+
+
+def role_of(user):
+    return "admin" if is_admin(user) else "sub_admin" if user["role"] == SUB_ADMIN else None
+
+
 def is_admin(user):
     return bool(user) and user["username"].lower() in ADMINS
 
@@ -92,7 +104,7 @@ def current_user():
 
 def can_see_template(row, user):
     """비활성 템플릿은 관리자와 작성자 본인만 본다."""
-    return bool(row["active"]) or is_admin(user) or bool(user and row["author_id"] == user["id"])
+    return bool(row["active"]) or is_staff(user) or bool(user and row["author_id"] == user["id"])
 
 
 def login_required(fn):
@@ -106,12 +118,26 @@ def login_required(fn):
 
 
 def admin_required(fn):
+    """메인 관리자(ADMIN_USERS)만: 삭제, 부 관리자 지정."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         user = current_user()
         if user is None:
             return err("로그인이 필요합니다.", 401)
         if not is_admin(user):
+            return err("메인 관리자만 할 수 있습니다.", 403)
+        return fn(user, *args, **kwargs)
+    return wrapper
+
+
+def staff_required(fn):
+    """메인 관리자 또는 부 관리자: 관리자 페이지 보기, 템플릿 비/활성화, 회원 정지."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            return err("로그인이 필요합니다.", 401)
+        if not is_staff(user):
             return err("관리자만 할 수 있습니다.", 403)
         return fn(user, *args, **kwargs)
     return wrapper
@@ -187,6 +213,8 @@ def user_json(u):
         "username": u["username"],
         "email": u["email"],
         "isAdmin": is_admin(u),
+        "isStaff": is_staff(u),
+        "role": role_of(u),
         "avatar": f"/api/users/{u['id']}/avatar.png?v={u['avatar_ver']}" if u["avatar_ver"] else None,
         "linkedServers": links,
     }
@@ -839,7 +867,7 @@ def set_active(table, row_id, data):
 
 
 @app.get("/api/admin/users")
-@admin_required
+@staff_required
 def admin_users(_admin):
     rows = db.get_db().execute("""
         SELECT u.*,
@@ -862,12 +890,33 @@ def admin_users(_admin):
 
 
 @app.post("/api/admin/users/<int:uid>/active")
-@admin_required
-def admin_user_active(admin, uid):
+@staff_required
+def admin_user_active(actor, uid):
+    """회원 정지/해제. 메인 관리자는 아무도 정지할 수 없고, 부 관리자는 다른 부 관리자를 정지할 수 없다."""
     target = db.get_db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
     if target is not None and is_admin(target):
-        return err("관리자 계정은 비활성화할 수 없습니다.", 400)
+        return err("메인 관리자 계정은 정지할 수 없습니다.", 400)
+    if target is not None and target["role"] == SUB_ADMIN and not is_admin(actor):
+        return err("부 관리자 계정은 메인 관리자만 정지할 수 있습니다.", 403)
     return set_active("users", uid, body())
+
+
+@app.post("/api/admin/users/<int:uid>/role")
+@admin_required
+def admin_user_role(_admin, uid):
+    """부 관리자 지정/해제 ({"role": "sub_admin"} 또는 {"role": null}). 메인 관리자만."""
+    role = body().get("role")
+    if role not in (SUB_ADMIN, None):
+        return err("role 은 sub_admin 또는 null 이어야 합니다.")
+    conn = db.get_db()
+    target = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    if target is None:
+        return err("찾을 수 없습니다.", 404)
+    if is_admin(target):
+        return err("메인 관리자는 ADMIN_USERS 설정으로 정해져서 여기서 바꿀 수 없습니다.", 400)
+    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+    conn.commit()
+    return jsonify({"ok": True, "role": role})
 
 
 @app.delete("/api/admin/users/<int:uid>")
@@ -888,14 +937,14 @@ def admin_user_delete(admin, uid):
 
 
 @app.get("/api/admin/templates")
-@admin_required
+@staff_required
 def admin_templates(_admin):
     rows = db.get_db().execute(TEMPLATE_SELECT + " ORDER BY t.id DESC").fetchall()
     return jsonify([template_summary(r) for r in rows])
 
 
 @app.post("/api/admin/templates/<int:tid>/active")
-@admin_required
+@staff_required
 def admin_template_active(_admin, tid):
     return set_active("templates", tid, body())
 

@@ -35,6 +35,7 @@ API
 - /api/profile/avatar (POST {image: data URL} 5MB 이하 → 256px PNG로 다시 저장, DELETE), /api/users/<id>/avatar.png. 파일은 instance/avatars/
 - 로그인 {remember: true} = 30일 유지 쿠키, 아니면 브라우저 세션 쿠키. 탭 아이콘 static/favicon.svg(+favicon.ico)
 - /api/admin/users, /api/admin/templates (GET 목록), .../<id>/active (POST {active}), .../<id> (DELETE). ADMIN_USERS 환경변수의 아이디만. 비활성 템플릿은 작성자·관리자만 보고, 비활성 회원은 로그인·플러그인 차단. 회원 삭제 시 올린 템플릿도 삭제, 기본 템플릿은 삭제 불가(비활성화만)
+- 부 관리자(users.role='sub_admin'): 메인 관리자가 /api/admin/users/<id>/role {role} 로 지정·해제(화면에서는 두 번 눌러야 지정). 부 관리자는 관리자 페이지 보기, 템플릿 비/활성화, 일반 회원 정지/해제만. 삭제·권한 부여·다른 관리자 정지는 메인 관리자만
 - /api/servers (GET 내 서버 목록, POST 서버 추가→키 1회 표시), /api/servers/<id>/key (POST 재발급), /api/servers/<id> (DELETE)
 - /api/links (GET 내가 연동한 서버 목록), /api/links/<server_id> (DELETE 그 서버만 해제). 인게임 연동은 서버마다 따로(server_links)
 - 플러그인: 키 하나 = 서버 하나(servers). X-Server-Name 헤더(UTF-8 퍼센트 인코딩)로 이름 즉시 갱신, POST /api/plugin/server {name}. 이름 없으면 "Minecraft Server (N)". 운영자 키 = is_operator 서버
@@ -42,7 +43,7 @@ API
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
-테스트: cd web; .venv/Scripts/python -m unittest test_app  (15개)
+테스트: cd web; .venv/Scripts/python -m unittest test_app  (16개)
 운영 실행: deploy/README.md (PRODUCTION / COOKIE_SECURE / TRUST_PROXY 환경변수)
 ```
 

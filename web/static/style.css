@@ -240,3 +240,4 @@ img.avatar { object-fit: cover; display: block; }
 .avatar-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .avatar-actions .avatar-btn { white-space: nowrap; flex: none; margin: 0; }  /* label 기본 여백(14px 0 6px) 제거 */
 .avatar-btn.muted { color: var(--ink-soft); }
+.btn.armed { border-color: var(--accent); color: var(--accent); }

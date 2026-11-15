@@ -18,7 +18,7 @@
 
       async function render() {
         const p = await App.api("/api/profile");
-        const badge = p.isAdmin ? `<span class="badge admin">관리자</span>`
+        const badge = p.isAdmin ? `<span class="badge admin">관리자</span>` : p.role === "sub_admin" ? `<span class="badge admin">부 관리자</span>`
           : p.emailVerified ? `<span class="badge ok">이메일 인증됨</span>` : "";
         const mc = p.links.length
           ? `<ul class="server-list" style="width:100%">${p.links.map((l) => `<li><span><b>${App.esc(l.serverName)}</b>

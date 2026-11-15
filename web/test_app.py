@@ -125,6 +125,42 @@ class FlowTest(unittest.TestCase):
             self.c.post("/api/auth/verify-code", json={"username": "codeuser2", "code": wrong})
         self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "codeuser2", "code": code}).status_code, 429)
 
+    def test_sub_admin(self):
+        boss, sub, sub2, member = (app.test_client() for _ in range(4))
+        # boss1(ADMIN_USERS)은 다른 테스트가 먼저 만들었을 수 있다 → 있으면 로그인
+        if boss.post("/api/auth/login", json={"username": "boss1", "password": "password123"}).status_code != 200:
+            self.c = boss
+            self.register("boss1")
+        for client, name in ((sub, "helper1"), (sub2, "helper2"), (member, "member1")):
+            self.c = client
+            self.register(name)
+        uid = lambda c: c.get("/api/auth/me").json["id"]
+        sid, sid2, mid = uid(sub), uid(sub2), uid(member)
+        # 메인 관리자만 지정 가능
+        self.assertEqual(member.post(f"/api/admin/users/{sid}/role", json={"role": "sub_admin"}).status_code, 403)
+        self.assertEqual(boss.post(f"/api/admin/users/{sid}/role", json={"role": "boss"}).status_code, 400)
+        for x in (sid, sid2):
+            self.assertEqual(boss.post(f"/api/admin/users/{x}/role", json={"role": "sub_admin"}).status_code, 200)
+        me = sub.get("/api/auth/me").json
+        self.assertEqual((me["role"], me["isStaff"], me["isAdmin"]), ("sub_admin", True, False))
+        self.assertEqual(sub.get("/api/admin/users").status_code, 200)
+        # 부 관리자가 못 하는 것: 권한 부여, 삭제, 다른 부 관리자·메인 관리자 정지
+        self.assertEqual(sub.post(f"/api/admin/users/{mid}/role", json={"role": "sub_admin"}).status_code, 403)
+        self.assertEqual(sub.delete(f"/api/admin/users/{mid}").status_code, 403)
+        self.assertEqual(sub.post(f"/api/admin/users/{sid2}/active", json={"active": False}).status_code, 403)
+        self.assertEqual(sub.post(f"/api/admin/users/{uid(boss)}/active", json={"active": False}).status_code, 400)
+        tid = next(t for t in sub.get("/api/admin/templates").json if t["builtin"])["id"]
+        self.assertEqual(sub.delete(f"/api/admin/templates/{tid}").status_code, 403)
+        # 부 관리자가 하는 것: 템플릿 비/활성화, 일반 회원 정지/해제
+        self.assertEqual(sub.post(f"/api/admin/templates/{tid}/active", json={"active": False}).status_code, 200)
+        self.assertEqual(sub.post(f"/api/admin/templates/{tid}/active", json={"active": True}).status_code, 200)
+        self.assertEqual(sub.post(f"/api/admin/users/{mid}/active", json={"active": False}).status_code, 200)
+        self.assertIsNone(member.get("/api/auth/me").json)
+        self.assertEqual(sub.post(f"/api/admin/users/{mid}/active", json={"active": True}).status_code, 200)
+        # 해제하면 관리자 페이지 접근 불가
+        boss.post(f"/api/admin/users/{sid}/role", json={"role": None})
+        self.assertEqual(sub.get("/api/admin/users").status_code, 403)
+
     def test_admin_and_profile(self):
         boss, user, other = app.test_client(), app.test_client(), app.test_client()
         for client, name in ((boss, "boss1"), (user, "writer1"), (other, "viewer1")):

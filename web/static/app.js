@@ -36,7 +36,7 @@ const App = (() => {
     const box = el.querySelector(".userbox");
     const user = await me().catch(() => null);
     if (user) {
-      if (user.isAdmin) {
+      if (user.isStaff) {  // 메인·부 관리자 모두 관리자 메뉴
         el.querySelector("nav.main").insertAdjacentHTML("beforeend", `<a href="/admin" data-k="admin">관리자</a>`);
         el.querySelector(`[data-k="${active}"]`)?.classList.add("active");
       }

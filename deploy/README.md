@@ -23,7 +23,7 @@ python -m venv .venv
 | `DB_PATH` | (선택) | SQLite 파일 위치. 기본 `web/instance/app.db` |
 | `MAIL_USER`, `MAIL_PASSWORD` | Gmail 주소, 앱 비밀번호 | 가입 인증 메일 발송. 없으면 메일 대신 서버 로그에 링크를 찍습니다(개발용) |
 | `MAIL_HOST`, `MAIL_PORT` | (선택) | 기본 `smtp.gmail.com`, `587` |
-| `ADMIN_USERS` | 관리자 아이디 | 쉼표로 여러 명. 이 아이디로 로그인하면 머리글에 "관리자" 메뉴가 생기고 /admin 에서 회원·템플릿을 비활성화/삭제합니다. 관리자 계정은 비활성화·삭제할 수 없습니다 |
+| `ADMIN_USERS` | 관리자 아이디 | 쉼표로 여러 명. 이 아이디로 로그인하면 머리글에 "관리자" 메뉴가 생기고 /admin 에서 회원·템플릿을 비활성화/삭제합니다. 관리자 계정은 비활성화·삭제할 수 없습니다. 부 관리자는 관리자 페이지에서 메인 관리자가 지정합니다(템플릿 비/활성화, 회원 정지만 가능) |
 | `ASSETS_DIR` | (선택) | 블록 에셋 위치. 기본 `~/.blueprint/assets` |
 | `SECRET_KEY`, `PLUGIN_API_KEY` | (선택) | 없으면 `web/instance/`에 자동 생성됩니다 |
 
