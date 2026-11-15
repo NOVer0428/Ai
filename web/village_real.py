@@ -301,7 +301,7 @@ def _beam(axis):
     return S("stripped_spruce_log", axis=axis)
 
 
-def _wing_tops(x0, x1, z0, z1, ridge, ends):
+def _wing_tops(x0, x1, z0, z1, ridge, ends, steep=False):
     """한 날개 지붕의 칸별 높이(반 칸 단위). ridge: 용마루 방향('x'|'z').
     ends: (작은 쪽 끝, 큰 쪽 끝) 각각 'hip'(추녀만, 모임) / 'paljak'(아래는 추녀, 위는 합각) / None(다른 날개에 묻힘).
     팔작: 끝에서 S칸까지는 모임지붕, 그 안쪽은 맞배라서 경계에 세모 합각벽이 생긴다."""
@@ -309,6 +309,8 @@ def _wing_tops(x0, x1, z0, z1, ridge, ends):
     m = ((z1 - z0) if ridge == "x" else (x1 - x0)) // 2 + 1
     # 처마 쪽 4칸은 반 칸씩(완만), 그 위는 한 칸씩(45°) 오르는 오목 곡선. 한 번에 한 칸 넘게 뛰면 계단 벽이 생긴다.
     curve = [1, 2, 3, 4] + [4 + 2 * i for i in range(1, m)]
+    if steep:                                  # 서양 중세 지붕: 처음부터 45° (모든 칸 계단)
+        curve = [2 + 2 * i for i in range(m + 1)]
     out = {}
     for x in range(x0, x1 + 1):
         for z in range(z0, z1 + 1):
@@ -330,17 +332,19 @@ def _wing_tops(x0, x1, z0, z1, ridge, ends):
 def _field_roof(k, tops, y0, mat, gable_fill):
     """칸별 높이 지도로 지붕을 깐다. 홀수 = 반블록, 짝수 = 오르막 쪽을 보는 계단(꼭대기는 꽉 찬 블록).
     각 칸은 이웃 칸 블록 높이까지 아래를 채워 틈이 없게 한다. 돌려주는 값: {(x,z): 지붕 블록 y}."""
-    full = S(full_of(mat))
+    name = mat if callable(mat) else (lambda x, z: mat)       # mat: 재료 이름 또는 (x,z)->이름 (지붕 질감 섞기)
     ys = {p: y0 + (t - 1) // 2 if t % 2 else y0 + t // 2 - 1 for p, (t, *_) in tops.items()}
     for (x, z), (t, gable, _) in tops.items():
+        m_ = name(x, z)
+        full = S(full_of(m_))
         nb = [((dx, dz), tops[(x + dx, z + dz)][0]) for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
               if (x + dx, z + dz) in tops]
         y = ys[(x, z)]
         hi = max(nb, key=lambda n: n[1]) if nb else None
         if t % 2:
-            blk = S(f"{mat}_slab")
+            blk = S(f"{m_}_slab")
         elif hi and hi[1] > t:
-            blk = S(f"{mat}_stairs", facing={(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}[hi[0]])
+            blk = S(f"{m_}_stairs", facing={(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}[hi[0]])
         else:
             blk = full
         k.set(x, y, z, blk)
@@ -548,6 +552,320 @@ def hanok():
     return k.build()
 
 
+# ==================================================================== 중세 여관 (선술집 겸 여관)
+# 근거: design/references-2026.md "중세 여관" 절. 아래는 돌, 위는 목조 골조(2층 앞뒤로 내민 제티),
+# 홀수 벽 길이(15×11), 덩어리마다 다른 지붕 높이(본채 > 앞 박공 > 지붕창 > 부엌채), 45° 지붕, 굴뚝은 용마루보다 높게.
+IN_STONE = mix((S("stone_bricks"), 5), (S("cobblestone"), 2), (S("andesite"), 2),
+               (S("cracked_stone_bricks"), 1), (S("stone"), 1))
+IN_BASE = mix((S("cobblestone"), 3), (S("mossy_cobblestone"), 1), (S("stone_bricks"), 2))
+IN_POST = S("stripped_dark_oak_log", axis="y")
+IN_FILL = S("calcite")                      # 회벽 (흰 테라코타는 분홍빛이라 방해석)
+IN_FLOOR = S("spruce_planks")
+_BACK = {"north": "south", "south": "north"}
+
+
+def _dlog(axis):
+    return S("stripped_dark_oak_log", axis=axis)
+
+
+def _roof_mat(x, z):
+    from seed_detail import h3
+    return "deepslate_brick" if h3(x, 7, z) % 9 == 0 else "deepslate_tile"   # 기와 질감 섞기 (드물게)
+
+
+def _frame_wall(k, plane, fixed, a0, a1, posts, windows, braces=()):
+    """목조 골조 벽 한 면(2층). plane='z'면 z=fixed 인 남북면(a=x), 'x'면 x=fixed 인 동서면(a=z).
+    y5 하인방, y6~8 기둥·회벽(창은 y6~7 유리), y9 상인방. braces: 창 없는 2칸 판 (a, a+1)에 넣는 까치발."""
+    along = "x" if plane == "z" else "z"
+
+    def at(a, y):
+        return (a, y, fixed) if plane == "z" else (fixed, y, a)
+    for a in range(a0, a1 + 1):
+        k.set(*at(a, 5), _dlog(along))
+        k.set(*at(a, 9), _dlog(along))
+        for y in (6, 7, 8):
+            if a in posts:
+                k.set(*at(a, y), IN_POST)
+            elif a in windows and y < 8:
+                k.pane(*at(a, y), along, "glass_pane")
+            else:
+                k.set(*at(a, y), IN_FILL)
+    lo, hi = ("west", "east") if plane == "z" else ("north", "south")
+    for a in braces:                        # 위 모서리는 뒤집힌 계단, 아래는 계단 → 기둥 쪽으로 버팀
+        for b, f in ((a, lo), (a + 1, hi)):
+            k.set(*at(b, 8), S("dark_oak_stairs", facing=f, half="top"))
+            k.set(*at(b, 6), S("dark_oak_stairs", facing=f))
+
+
+def _gable_fill(k, plane, fixed, a_range, y_from, posts, windows=()):
+    """박공 세모벽: 지붕 바로 밑까지 회벽을 채우고 기둥·창을 넣는다."""
+    along = "x" if plane == "z" else "z"
+    for a in a_range:
+        y = y_from
+        while y <= y_from + 12:
+            p = (a, y, fixed) if plane == "z" else (fixed, y, a)
+            if p in k.cells:
+                break
+            if (a, y) in windows:
+                k.pane(*p, along, "glass_pane")
+            else:
+                k.set(*p, IN_POST if a in posts else IN_FILL)
+            y += 1
+
+
+def _lips(k, tops, ys, out):
+    """처마·박공 끝 밑에 뒤집힌 계단(두께감). out(x,z) → 안쪽 방향(facing) 또는 None."""
+    for (x, z) in tops:
+        f = out(x, z)
+        y = ys[(x, z)] - 1
+        if f and (x, y, z) not in k.cells:
+            k.set(x, y, z, S("dark_oak_stairs", facing=f, half="top"))
+
+
+def _chimney(k, xs, zs, top, flue=None):
+    for x in xs:
+        for z in zs:
+            for y in range(0, top):
+                if flue and (x, z) == flue[:2] and y >= flue[2]:
+                    k.set(x, y, z, None)
+                else:
+                    k.set(x, y, z, IN_STONE(x, y, z))
+
+
+def medieval_inn():
+    k = Arch()
+
+    # ---------------------------------------------------------------- 1층: 돌 (본채 x0..14 z0..10, 부엌채 x-6..0 z1..9)
+    hall_floor = mix((S("polished_andesite"), 3), (S("stone_bricks"), 2), (S("andesite"), 1))
+    for x0, z0, x1, z1 in ((0, 0, 14, 10), (-6, 1, 0, 9)):
+        for x in range(x0, x1 + 1):
+            for z in range(z0, z1 + 1):
+                edge = x in (x0, x1) or z in (z0, z1)
+                k.set(x, 0, z, IN_BASE(x, 0, z) if edge else hall_floor(x, 0, z))
+                if edge:
+                    for y in range(1, 5):
+                        k.set(x, y, z, IN_STONE(x, y, z))
+    for x, z in ((0, 0), (4, 0), (10, 0), (14, 0), (0, 10), (4, 10), (10, 10), (14, 10), (-6, 1), (-6, 9)):
+        k.fill(x, 1, z, x, 4, z, S("spruce_log", axis="y"))          # 1층 기둥 (돌벽 구간 나누기)
+    for z in range(1, 10):                                            # 부엌채 상인방
+        k.set(-6, 5, z, S("spruce_log", axis="z"))
+    for x in range(-6, 1):
+        k.set(x, 5, 1, S("spruce_log", axis="x"))
+        k.set(x, 5, 9, S("spruce_log", axis="x"))
+
+    def plinth(x, z, f):                                              # 벽 밑 계단 띠 (밑단 무게감)
+        if (x, 0, z) not in k.cells:
+            k.set(x, 0, z, S("stone_brick_stairs", facing=f))
+    k.set(7, 0, -1, S("stone_brick_stairs", facing="south"))          # 문 앞 디딤
+    for x in range(0, 15):
+        plinth(x, -1, "south")
+        plinth(x, 11, "north")
+    for z in range(0, 11):
+        if z not in (4, 5, 6):
+            plinth(15, z, "west")
+    for z in (0, 10):
+        plinth(-1, z, "east")
+    for x in range(-6, 0):
+        plinth(x, 0, "south")
+        plinth(x, 10, "north")
+    for z in range(1, 10):
+        if z not in (4, 5, 6):
+            plinth(-7, z, "east")
+
+    # ---------------------------------------------------------------- 2층 바닥과 제티 (앞뒤로 한 칸 내밈)
+    k.fill(0, 5, -1, 14, 5, 11, IN_FLOOR)
+    for x in (3, 7):
+        k.fill(x, 4, 1, x, 4, 9, S("stripped_spruce_log", axis="z"))  # 1층 천장 큰 보
+    k.fill(11, 4, 1, 11, 4, 8, S("stripped_spruce_log", axis="z"))
+    for x in (0, 4, 10, 14):                                          # 제티 까치발
+        k.set(x, 4, -1, S("dark_oak_stairs", facing="south", half="top"))
+        k.set(x, 4, 11, S("dark_oak_stairs", facing="north", half="top"))
+
+    # ---------------------------------------------------------------- 2층 목조 골조
+    fb_posts = {0, 2, 5, 9, 12, 14}                                   # 방 칸막이(x5·x9)와 맞춘 기둥
+    _frame_wall(k, "z", -1, 0, 14, fb_posts, {3, 4, 7, 10, 11}, braces=())
+    _frame_wall(k, "z", 11, 0, 14, fb_posts, {3, 4, 10, 11}, braces=(6,))
+    side_posts = {-1, 1, 4, 7, 9, 11}
+    _frame_wall(k, "x", 0, -1, 11, side_posts, {10}, braces=(2, 5))
+    _frame_wall(k, "x", 14, -1, 11, side_posts, {2, 3, 10}, braces=(5,))
+    k.fill(1, 9, 0, 13, 9, 10, IN_FLOOR)                              # 다락 바닥
+
+    for x, pot in ((3, "potted_poppy"), (4, "potted_cornflower"), (7, "potted_azure_bluet"),
+                   (10, "potted_allium"), (11, "potted_poppy")):
+        k.set(x, 5, -2, S("dark_oak_slab", type="top"))              # 창턱 선반 + 화분 (가볍게)
+        k.set(x, 6, -2, S(pot))
+
+    # ---------------------------------------------------------------- 1층 문과 창
+    for z, f, dx in ((0, "north", 7), (10, "south", 6)):
+        k.fill(dx - 1, 1, z, dx - 1, 3, z, S("stripped_spruce_log", axis="y"))
+        k.fill(dx + 1, 1, z, dx + 1, 3, z, S("stripped_spruce_log", axis="y"))
+        k.set(dx, 3, z, S("stripped_spruce_log", axis="x"))
+        k.door(dx, 1, z, "spruce", facing=f)
+    for x0, x1, z, out in ((2, 3, 0, "north"), (11, 12, 0, "north"), (8, 9, 10, "south")):
+        dz = -1 if out == "north" else 1
+        for x in range(x0, x1 + 1):
+            for y in (2, 3):
+                k.pane(x, y, z, "x")
+            k.set(x, 1, z + dz, S("stone_brick_stairs", facing=_BACK[out], half="top"))   # 창턱
+            k.set(x, 4, z + dz, S("stone_brick_stairs", facing=_BACK[out], half="top"))   # 인방
+    for z0 in (2, 7):                                                 # 동쪽 창
+        for z in (z0, z0 + 1):
+            for y in (2, 3):
+                k.pane(14, y, z, "z")
+    for x in (-4, -2):                                                # 부엌 앞창
+        for y in (2, 3):
+            k.pane(x, y, 1, "x")
+    k.door(-3, 1, 9, "spruce", facing="south")                       # 부엌 뒷문
+    k.door(0, 1, 8, "spruce", facing="west")                         # 홀 ↔ 부엌
+    k.hang(5, 4, -1)                                                  # 제티 밑 등
+    k.hang(9, 4, -1)
+    k.set(13, 4, -1, S("spruce_hanging_sign", attached=False, rotation=4))   # 간판 (길과 직각)
+
+    # ---------------------------------------------------------------- 지붕
+    kt = _wing_tops(-7, -1, 0, 10, "x", (None, None), steep=True)             # 부엌채 (낮음)
+    kys = _field_roof(k, kt, 5, _roof_mat, IN_FILL)
+    tops = {}
+    for wing, lift in ((_wing_tops(-1, 15, -2, 12, "x", (None, None), steep=True), 0),   # 본채
+                       (_wing_tops(3, 11, -2, 6, "z", (None, None), steep=True), 0),     # 앞 박공 (입구 위)
+                       (_wing_tops(1, 5, 6, 12, "z", (None, None), steep=True), 2),      # 뒤 지붕창: 한 칸 높게
+                       (_wing_tops(9, 13, 6, 12, "z", (None, None), steep=True), 2)):
+        for p, (t, *rest) in wing.items():
+            if p not in tops or t + lift > tops[p][0]:
+                tops[p] = (t + lift, *rest)
+    ys = _field_roof(k, tops, 9, _roof_mat, IN_FILL)
+
+    _gable_fill(k, "x", 0, range(-1, 12), 10, {-1, 2, 5, 8, 11}, {(4, 11), (4, 12), (6, 11), (6, 12)})
+    _gable_fill(k, "x", 14, range(-1, 12), 10, {-1, 2, 5, 8, 11}, {(1, 10), (1, 11), (9, 10), (9, 11)})
+    _gable_fill(k, "z", -1, range(4, 11), 10, {5, 7, 9}, {(6, 10), (6, 11), (8, 10), (8, 11)})
+    _gable_fill(k, "x", -6, range(1, 10), 6, {1, 3, 5, 7, 9})
+    for cx in (3, 11):                                                # 지붕창 앞면
+        for z in (9, 10):
+            for y in (10, 11):
+                k.set(cx, y, z, None)
+        k.set(cx - 1, 10, 11, IN_POST)
+        k.set(cx + 1, 10, 11, IN_POST)
+        for y in (10, 11):
+            k.pane(cx, y, 11, "x")
+
+    def main_out(x, z):
+        return "south" if z == -2 else "north" if z == 12 else "east" if x == -1 else "west" if x == 15 else None
+    _lips(k, tops, ys, main_out)
+    _lips(k, kt, kys, lambda x, z: "south" if z == 0 else "north" if z == 10 else "east" if x == -7 else None)
+
+    # ---------------------------------------------------------------- 굴뚝: 지붕을 뚫고 용마루보다 높게
+    _chimney(k, (15, 16), (4, 5, 6), 18, flue=(15, 5, 2))             # 동쪽 벽난로 (연도로 연기 빠짐)
+    k.set(15, 1, 5, S("campfire", lit=True))
+    for x, z in ((15, 4), (15, 6), (16, 4), (16, 5), (16, 6)):
+        k.set(x, 18, z, S("stone_brick_slab"))
+    for y in (1, 2):
+        k.set(14, y, 5, S("iron_bars"))                               # 불 앞 쇠창살
+    for z in (4, 5, 6):
+        k.set(13, 3, z, S("stone_brick_stairs", facing="east", half="top"))   # 벽난로 선반
+        k.set(13, 0, z, S("bricks"))
+    _chimney(k, (-8, -7), (4, 5, 6), 12)                              # 부엌 굴뚝
+    k.set(-7, 12, 5, S("campfire", lit=True))
+
+    # ---------------------------------------------------------------- 1층 홀 (x1..13, z1..9)
+    for x in (1, 2, 3):                                               # 술 카운터
+        k.set(x, 1, 6, S("barrel", facing="south"))
+    for z in (6, 7, 8):
+        k.set(4, 1, z, S("barrel", facing="east"))
+    k.set(2, 2, 6, S("brewing_stand"))
+    k.set(3, 2, 6, S("candle", candles=3, lit=True))
+    k.set(4, 2, 7, S("decorated_pot"))
+    for y in (1, 2):
+        k.set(1, y, 7, S("barrel", facing="east"))                    # 술통
+    for x in (2, 3):
+        for y in (2, 3):
+            k.set(x, y, 9, S("spruce_shelf", facing="north"))         # 뒤 선반
+    for x in (2, 4):
+        k.set(x, 1, 5, S("spruce_slab"))                             # 바 의자
+    for z0 in (3, 7):                                                 # 긴 식탁 + 의자
+        for x in range(6, 10):
+            k.set(x, 1, z0, S("spruce_slab", type="top"))
+            k.set(x, 1, z0 - 1, S("spruce_stairs", facing="north"))
+            k.set(x, 1, z0 + 1, S("spruce_stairs", facing="south"))
+        k.set(7, 2, z0, S("candle", candles=2, lit=True))
+        k.hang(7, 3, z0)
+    k.set(12, 1, 4, S("spruce_stairs", facing="west"))               # 벽난로 앞 안락의자
+    k.set(12, 1, 6, S("spruce_stairs", facing="west"))
+    k.rug(11, 4, 12, 6, 1, "red", border="brown")
+    k.set(1, 1, 1, S("barrel", facing="up"))
+    k.set(1, 2, 1, S("decorated_pot"))
+    k.set(13, 1, 1, S("hay_block", axis="y"))
+    k.hang(3, 3, 3)
+    k.hang(11, 3, 2)
+    for i, x in enumerate((13, 12, 11, 10)):                         # 계단 (뒷벽 따라 서쪽으로 오름)
+        k.set(x, 1 + i, 9, S("spruce_stairs", facing="west"))
+        for y in range(1, 1 + i):
+            k.set(x, y, 9, IN_FLOOR)
+    for x in (10, 11, 12):                                           # 계단 위 머리 공간 (위층 바닥 구멍)
+        k.set(x, 5, 9, None)
+
+    # ---------------------------------------------------------------- 부엌 (x-5..-1, z2..8)
+    k.set(-5, 1, 4, S("smoker", facing="east", lit=True))
+    k.set(-5, 1, 5, S("water_cauldron", level=3))
+    k.set(-5, 1, 6, S("furnace", facing="east", lit=True))
+    k.set(-4, 1, 2, S("crafting_table"))
+    k.set(-3, 1, 2, S("barrel", facing="south"))
+    k.set(-2, 1, 2, S("chest", facing="south"))
+    for x in (-4, -3, -2):
+        k.set(x, 3, 2, S("spruce_shelf", facing="south"))
+    k.set(-2, 1, 5, S("spruce_slab", type="top"))                    # 작업대
+    k.set(-2, 1, 6, S("spruce_slab", type="top"))
+    k.set(-2, 2, 5, S("decorated_pot"))
+    k.fill(-5, 5, 5, -1, 5, 5, S("stripped_spruce_log", axis="x"))   # 부엌 대들보
+    k.hang(-3, 4, 5)
+    k.set(-1, 1, 7, S("barrel", facing="up"))
+    k.set(-1, 2, 7, S("barrel", facing="up"))
+
+    # ---------------------------------------------------------------- 2층 객실 (y5 바닥, y6..8)
+    k.fill(5, 6, 0, 5, 8, 6, IN_FLOOR)                                # 칸막이
+    k.fill(9, 6, 0, 9, 8, 6, IN_FLOOR)
+    k.fill(1, 6, 7, 13, 8, 7, IN_FLOOR)
+    for x in (5, 9):
+        k.fill(x, 6, 7, x, 8, 7, S("stripped_spruce_log", axis="y"))
+    for x in (2, 7, 12):
+        k.door(x, 6, 7, "spruce", facing="north")
+    k.bed(1, 6, 1, "red", "north")                                   # 서쪽 방: 2인 (머리는 앞벽)
+    k.bed(2, 6, 1, "red", "north")
+    k.set(1, 6, 2, S("chest", facing="south"))
+    k.set(3, 6, 6, S("barrel", facing="up"))
+    k.set(3, 7, 6, S("candle", candles=1, lit=True))
+    k.rug(1, 1, 4, 3, 6, "brown")
+    k.hang(3, 8, 3)
+    k.bed(8, 6, 1, "blue", "north")                                  # 가운데 방: 1인
+    k.set(8, 6, 2, S("chest", facing="south"))
+    k.set(8, 6, 6, S("barrel", facing="up"))
+    k.set(8, 7, 6, S("candle", candles=1, lit=True))
+    k.set(6, 6, 1, S("lectern", facing="east"))
+    k.hang(7, 8, 3)
+    for x in (10, 13):                                                # 동쪽 방: 1인 침대 둘
+        k.bed(x, 6, 1, "green", "north")
+        k.set(x, 6, 2, S("chest", facing="south"))
+    k.set(11, 6, 6, S("barrel", facing="up"))
+    k.set(11, 7, 6, S("candle", candles=2, lit=True))
+    k.rug(11, 1, 12, 3, 6, "green")
+    k.hang(12, 8, 3)
+    for x in (10, 11):                                                # 계단 구멍 난간
+        k.set(x, 6, 8, S("spruce_fence"))
+    k.ladder(1, 8, 6, 9, "east")                                      # 다락 사다리
+    k.set(6, 6, 10, S("spruce_stairs", facing="south"))              # 복도 의자
+    k.set(7, 6, 10, S("spruce_stairs", facing="south"))
+    k.hang(5, 8, 9)
+    k.hang(9, 8, 9)
+
+    # ---------------------------------------------------------------- 다락 (y9 바닥)
+    for x, b in ((5, "barrel"), (6, "chest"), (8, "barrel"), (9, "barrel")):
+        k.set(x, 10, 5, S(b, facing="up") if b == "barrel" else S(b, facing="south"))
+    k.set(5, 11, 5, S("barrel", facing="up"))
+    k.set(12, 10, 5, S("hay_block", axis="y"))
+    k.hang(7, ys[(7, 5)] - 1, 5)
+
+    k.settle()                                                        # 계단 모서리·울타리·판유리 연결
+    return k.build()
+
+
 def real_templates():
     return [
         {"name": "모던 2층 단독주택", "category": "주택",
@@ -563,4 +881,9 @@ def real_templates():
                         "흙바닥 부엌(아궁이·솥·살강) → 한 단 높은 안방(장롱·보료), 우물마루 대청(연등천장), "
                         "건넌방, 앞쪽 툇마루.",
          "data": hanok()},
+        {"name": "중세 여관", "category": "상업",
+         "description": "1층은 돌, 2층은 앞뒤로 내민 목조 골조(제티·까치발)인 선술집 겸 여관. "
+                        "45° 기와지붕에 입구 위 앞 박공, 뒤 지붕창 둘, 낮은 부엌채, 용마루보다 높은 굴뚝 둘. "
+                        "1층 홀(술 카운터·술통·긴 식탁·벽난로·보), 부엌(훈연기·화로·솥), 2층 객실 셋, 다락 창고.",
+         "data": medieval_inn()},
     ]

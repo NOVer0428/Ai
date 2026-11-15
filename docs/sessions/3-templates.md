@@ -39,6 +39,7 @@
 |---|---|---|
 | 모던 2층 단독주택 | village_real | **0** (기준 예시) |
 | ㄱ자 한옥 | village_real | **0** |
+| 중세 여관 | village_real | **0** |
 | 모던 화이트 빌라 | village_east | 0 |
 | 지중해 빌라 | village_world | 0 |
 | 해안 등대 | village_world | 0 |
