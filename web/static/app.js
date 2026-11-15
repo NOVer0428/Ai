@@ -1,4 +1,16 @@
 // 공통 유틸: API 호출, 헤더, 토스트, 아이소메트릭 미리보기
+
+// 우클릭·텍스트 선택·끌기 막기 (입력칸과 복사용 코드 칸은 예외). 화면 보호용이며 개발자 도구까지 막지는 못한다
+(() => {
+  const editable = (node) => {
+    const el = node?.nodeType === 3 ? node.parentElement : node;  // 글자 노드면 부모 요소로
+    return el?.closest?.("input, textarea, select, [contenteditable], .cmd, .link-code, .fresh-key .mono");
+  };
+  document.addEventListener("contextmenu", (e) => { if (!editable(e.target)) e.preventDefault(); });
+  document.addEventListener("selectstart", (e) => { if (!editable(e.target)) e.preventDefault(); });
+  document.addEventListener("dragstart", (e) => { if (!editable(e.target)) e.preventDefault(); });
+})();
+
 const App = (() => {
   async function api(path, { method = "GET", body } = {}) {
     const opts = { method, headers: {}, credentials: "same-origin" };
