@@ -30,8 +30,96 @@ def axis_of(facing):
     return "x" if facing in ("east", "west") else "z"
 
 
+def _split(state):
+    bid, _, rest = state.partition("[")
+    props = dict(kv.split("=", 1) for kv in rest.rstrip("]").split(",")) if rest else {}
+    return bid.split(":", 1)[1], props
+
+
+# 면이 꽉 차지 않아 울타리·담장·판유리가 붙지 않는 블록 (이름 일부)
+_NOT_STURDY = ("_slab", "_stairs", "_fence", "_wall", "pane", "_bars", "_door", "_trapdoor", "carpet", "torch",
+               "lantern", "chain", "button", "lever", "pressure_plate", "_sign", "banner", "flower", "potted_",
+               "_pot", "_bed", "chest", "cauldron", "campfire", "lectern", "anvil", "bell", "candle", "cake",
+               "ladder", "vine", "_leaves", "grindstone", "brewing_stand", "_head", "_skull", "rail", "_shelf",
+               "scaffolding", "hopper", "end_rod", "lily_pad", "sapling", "_rod", "chain", "pumpkin", "melon",
+               "short_grass", "fern", "bush", "roots", "moss_carpet", "snow", "dirt_path", "farmland", "glass")
+_CCW = {"north": "west", "west": "south", "south": "east", "east": "north"}
+
+
 class Kit(Builder):
     """Builder + 건축 부품."""
+
+    # ------------------------------------------------------------ 블록 작용 (플러그인은 물리 없이 놓는다)
+    def settle(self):
+        """게임이 블록을 놓을 때 계산하는 상태를 미리 채운다. 플러그인은 setBlockData(…, false)로
+        물리 계산 없이 놓으므로, 이걸 안 하면 계단 모서리가 직선으로, 울타리·담장·판유리는 기둥만 남고,
+        나뭇잎은 persistent=false 라 시간이 지나면 썩어 사라진다.
+          계단: 바닐라 StairBlock.getStairsShape 규칙 (앞이 꺾인 계단이면 바깥 모서리, 뒤면 안쪽 모서리)
+          울타리: 같은 종류 울타리·울타리 문·꽉 찬 면에 붙음 / 판유리·철창: 판유리·철창·담장·꽉 찬 면
+          담장: 담장·판유리·울타리 문·꽉 찬 면, 위 기둥은 곧게 이어지는 두 면일 때만 생략
+          나뭇잎: persistent=true"""
+        cells = {p: _split(s) for p, s in self.cells.items()}
+
+        def at(p, d):
+            dx, dz = DIRS[d]
+            return cells.get((p[0] + dx, p[1], p[2] + dz))
+
+        def sturdy(c):
+            return c is not None and not any(k in c[0] for k in _NOT_STURDY)
+
+        def stairs(c):
+            return c is not None and c[0].endswith("_stairs")
+
+        new = {}
+        for p, (n, pr) in cells.items():
+            if n.endswith("_stairs"):
+                f, half = pr["facing"], pr["half"]
+
+                def free(d):  # canTakeShape: 그 방향 이웃이 같은 방향·같은 반쪽 계단이 아니어야 함
+                    c = at(p, d)
+                    return not stairs(c) or c[1]["facing"] != f or c[1]["half"] != half
+                shape = "straight"
+                front, back = at(p, f), at(p, OPP[f])
+                if stairs(front) and front[1]["half"] == half and axis_of(front[1]["facing"]) != axis_of(f) \
+                        and free(OPP[front[1]["facing"]]):
+                    shape = "outer_left" if front[1]["facing"] == _CCW[f] else "outer_right"
+                elif stairs(back) and back[1]["half"] == half and axis_of(back[1]["facing"]) != axis_of(f) \
+                        and free(back[1]["facing"]):
+                    shape = "inner_left" if back[1]["facing"] == _CCW[f] else "inner_right"
+                new[p] = S(n, **{**pr, "shape": shape})
+            elif n.endswith("_fence") and "gate" not in n:
+                nether = n.startswith("nether")
+                conn = {}
+                for d in DIRS:
+                    c = at(p, d)
+                    conn[d] = c is not None and (sturdy(c) or (c[0].endswith("_fence") and c[0].startswith("nether") == nether)
+                                                 or (c[0].endswith("_fence_gate") and axis_of(c[1]["facing"]) != axis_of(d)))
+                new[p] = S(n, **{**pr, **{d: str(v).lower() for d, v in conn.items()}})
+            elif n.endswith("_pane") or n == "glass_pane" or n.endswith("_bars"):
+                conn = {}
+                for d in DIRS:
+                    c = at(p, d)
+                    conn[d] = c is not None and (sturdy(c) or c[0].endswith("_pane") or c[0] == "glass_pane"
+                                                 or c[0].endswith("_bars") or c[0].endswith("_wall"))
+                new[p] = S(n, **{**pr, **{d: str(v).lower() for d, v in conn.items()}})
+            elif n.endswith("_wall") and not n.endswith("_wall_sign") and "banner" not in n and "torch" not in n \
+                    and "head" not in n and "skull" not in n and "fan" not in n:
+                above = cells.get((p[0], p[1] + 1, p[2]))
+                conn = {}
+                for d in DIRS:
+                    c = at(p, d)
+                    ok = c is not None and (sturdy(c) or c[0].endswith("_wall") or c[0].endswith("_pane")
+                                            or c[0] == "glass_pane" or c[0].endswith("_bars")
+                                            or (c[0].endswith("_fence_gate") and axis_of(c[1]["facing"]) != axis_of(d)))
+                    conn[d] = ("tall" if sturdy(above) else "low") if ok else "none"
+                on = {d for d, v in conn.items() if v != "none"}
+                straight = on in ({"north", "south"}, {"east", "west"})
+                up = not straight or (above is not None and not sturdy(above) and not above[0].endswith("_wall"))
+                new[p] = S(n, **{**pr, **conn, "up": str(up).lower()})
+            elif n.endswith("_leaves"):
+                new[p] = S(n, **{**pr, "persistent": "true"})
+        self.cells.update(new)
+
 
     # ------------------------------------------------------------ 기본
     def fill(self, x1, y1, z1, x2, y2, z2, block):
