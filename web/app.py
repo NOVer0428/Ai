@@ -43,7 +43,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=8 * 1024 * 1024,
-    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 14,
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,  # "로그인 상태 유지" 기간 (요청마다 연장)
     # HTTPS로 운영할 때만 켠다(HTTP 로컬 개발에서 켜면 로그인 쿠키가 안 붙는다)
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
 )
@@ -147,6 +147,7 @@ def user_json(u):
         "username": u["username"],
         "email": u["email"],
         "isAdmin": is_admin(u),
+        "avatar": f"/api/users/{u['id']}/avatar.png?v={u['avatar_ver']}" if u["avatar_ver"] else None,
         "minecraft": {"uuid": u["mc_uuid"], "name": u["mc_name"]} if u["mc_uuid"] else None,
     }
 
@@ -225,9 +226,10 @@ def send_verify_mail(user_id, email):
     db.get_db().commit()
 
 
-def log_in(user):
+def log_in(user, remember=False):
+    """remember=True(로그인 상태 유지)면 30일 쿠키, 아니면 브라우저를 닫을 때까지만."""
     session.clear()
-    session.permanent = True
+    session.permanent = remember
     session["uid"] = user["id"]
 
 
@@ -364,9 +366,7 @@ def login():
         # 화면이 바로 코드 입력 칸을 띄울 수 있게 알려 준다
         return jsonify({"error": msg, "needsVerify": True, "username": user["username"],
                         "email": mask_email(user["email"])}), 403
-    session.clear()
-    session.permanent = True
-    session["uid"] = user["id"]
+    log_in(user, remember=data.get("remember") is True)
     return jsonify(user_json(user))
 
 
@@ -678,6 +678,75 @@ def change_password(user):
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------- 프로필 이미지
+
+AVATARS = INSTANCE / "avatars"
+AVATAR_SIZE = 256
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+
+
+def avatar_file(uid):
+    return AVATARS / f"{int(uid)}.png"
+
+
+@app.post("/api/profile/avatar")
+@login_required
+def upload_avatar(user):
+    """{"image": "data:image/...;base64,..."} — JSON 으로 받아 CSRF 방어(require_json_for_writes)를 유지한다.
+    Pillow 로 열어 정사각형으로 자르고 256px PNG 로 다시 저장하므로 원본 파일(메타데이터 포함)은 남지 않는다."""
+    import base64
+    import binascii
+    import io
+    from PIL import Image, UnidentifiedImageError
+
+    raw = str(body().get("image", ""))
+    _, _, b64 = raw.partition("base64,")
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        return err("이미지 파일을 읽지 못했어요.")
+    if not data or len(data) > AVATAR_MAX_BYTES:
+        return err("5MB 이하의 이미지를 올려 주세요.")
+    try:
+        img = Image.open(io.BytesIO(data))
+        if img.format not in ("PNG", "JPEG", "GIF", "WEBP") or img.width * img.height > 40_000_000:
+            return err("PNG, JPG, GIF, WEBP 이미지만 올릴 수 있어요.")
+        img.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        return err("이미지 파일을 읽지 못했어요.")
+    side = min(img.size)
+    left, top = (img.width - side) // 2, (img.height - side) // 2
+    img = img.convert("RGBA").crop((left, top, left + side, top + side)).resize(
+        (AVATAR_SIZE, AVATAR_SIZE), Image.LANCZOS)
+    AVATARS.mkdir(parents=True, exist_ok=True)
+    tmp = avatar_file(user["id"]).with_suffix(".tmp")
+    img.save(tmp, "PNG", optimize=True)
+    tmp.replace(avatar_file(user["id"]))
+    conn = db.get_db()
+    conn.execute("UPDATE users SET avatar_ver = ? WHERE id = ?", (int(time.time() * 1000), user["id"]))
+    conn.commit()
+    return jsonify(user_json(current_user()))
+
+
+@app.delete("/api/profile/avatar")
+@login_required
+def delete_avatar(user):
+    avatar_file(user["id"]).unlink(missing_ok=True)
+    conn = db.get_db()
+    conn.execute("UPDATE users SET avatar_ver = NULL WHERE id = ?", (user["id"],))
+    conn.commit()
+    return jsonify(user_json(current_user()))
+
+
+@app.get("/api/users/<int:uid>/avatar.png")
+def get_avatar(uid):
+    path = avatar_file(uid)
+    if not path.exists():
+        return err("프로필 이미지가 없어요.", 404)
+    # 주소에 ?v=버전이 붙어 있어서 바뀌면 주소도 바뀐다 → 오래 캐시해도 된다
+    return send_file(path, mimetype="image/png", max_age=60 * 60 * 24 * 30)
+
+
 # ---------------------------------------------------------------- 관리자
 
 def set_active(table, row_id, data):
@@ -735,6 +804,7 @@ def admin_user_delete(admin, uid):
     conn.execute("DELETE FROM templates WHERE author_id = ?", (uid,))
     conn.execute("DELETE FROM users WHERE id = ?", (uid,))
     conn.commit()
+    avatar_file(uid).unlink(missing_ok=True)
     return jsonify({"ok": True})
 
 

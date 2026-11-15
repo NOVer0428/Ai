@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>로그인 · 블루프린트</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -14,6 +15,10 @@
       <input id="username" autocomplete="username" required>
       <label for="password">비밀번호</label>
       <input id="password" type="password" autocomplete="current-password" required>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer">
+        <input id="remember" type="checkbox" style="width:18px;height:18px;margin:0">로그인 상태 유지
+      </label>
+      <div class="hint">30일 동안 다시 로그인하지 않아도 돼요. 여러 사람이 쓰는 컴퓨터에서는 끄세요.</div>
       <button class="btn primary" type="submit">로그인</button>
       <div class="error" id="error"></div>
     </form>
@@ -38,6 +43,7 @@
         await App.api("/api/auth/login", { method: "POST", body: {
           username: document.getElementById("username").value,
           password: document.getElementById("password").value,
+          remember: document.getElementById("remember").checked,
         }});
         location.href = safeNext;
       } catch (err) {

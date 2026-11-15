@@ -39,7 +39,10 @@ const App = (() => {
         el.querySelector("nav.main").insertAdjacentHTML("beforeend", `<a href="/admin" data-k="admin">관리자</a>`);
         el.querySelector(`[data-k="${active}"]`)?.classList.add("active");
       }
-      box.innerHTML = `<a href="/profile" title="내 프로필" style="color:inherit;text-decoration:none;font-weight:700"><span class="status-dot ${user.minecraft ? "on" : ""}"></span>${esc(user.username)}</a>
+      const face = user.avatar
+        ? `<img class="mini-avatar" src="${esc(user.avatar)}" alt="">`
+        : `<span class="mini-avatar" aria-hidden="true">${esc(user.username.slice(0, 1).toUpperCase())}</span>`;
+      box.innerHTML = `<a href="/profile" title="내 프로필" style="color:inherit;text-decoration:none;font-weight:700;display:flex;align-items:center;gap:8px">${face}<span><span class="status-dot ${user.minecraft ? "on" : ""}"></span>${esc(user.username)}</span></a>
         <button class="btn ghost" id="logout">로그아웃</button>`;
       box.querySelector("#logout").onclick = async () => {
         await api("/api/auth/logout", { method: "POST" });

@@ -50,7 +50,7 @@ PRODUCTION=1 COOKIE_SECURE=1 TRUST_PROXY=1 .venv/bin/python app.py
 
 ## 4. 데이터 보관과 백업
 
-지워지면 안 되는 것은 `web/instance/` 폴더 하나입니다.
+지워지면 안 되는 것은 `web/instance/` 폴더 하나입니다(프로필 사진 `avatars/` 포함).
 
 - `app.db` — 회원, 업로드 템플릿, 보관함
 - `secret_key.txt` — 바뀌면 모두 로그아웃됩니다

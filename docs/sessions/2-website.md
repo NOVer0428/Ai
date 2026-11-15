@@ -32,12 +32,14 @@ API
 - /api/library, /api/library/<id> (POST 담기, DELETE 빼기)
 - /api/link/code (POST 6자리 연동 코드), /api/link (DELETE)
 - /api/profile (내 프로필·통계·올린 템플릿), /api/auth/password (POST 비밀번호 변경)
+- /api/profile/avatar (POST {image: data URL} 5MB 이하 → 256px PNG로 다시 저장, DELETE), /api/users/<id>/avatar.png. 파일은 instance/avatars/
+- 로그인 {remember: true} = 30일 유지 쿠키, 아니면 브라우저 세션 쿠키. 탭 아이콘 static/favicon.svg(+favicon.ico)
 - /api/admin/users, /api/admin/templates (GET 목록), .../<id>/active (POST {active}), .../<id> (DELETE). ADMIN_USERS 환경변수의 아이디만. 비활성 템플릿은 작성자·관리자만 보고, 비활성 회원은 로그인·플러그인 차단. 회원 삭제 시 올린 템플릿도 삭제, 기본 템플릿은 삭제 불가(비활성화만)
 - /api/server-key (GET 정보, POST 발급·재발급): 회원 서버 키. 플러그인 API는 운영자 키(전체) 또는 회원 키(그 키로 연동한 플레이어만)
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
-테스트: cd web; .venv/Scripts/python -m unittest test_app  (13개)
+테스트: cd web; .venv/Scripts/python -m unittest test_app  (15개)
 운영 실행: deploy/README.md (PRODUCTION / COOKIE_SECURE / TRUST_PROXY 환경변수)
 ```
 

@@ -16,6 +16,7 @@ import app as appmod  # noqa: E402
 from app import app  # noqa: E402
 
 PLUGIN = {"Authorization": "Bearer test-key"}
+appmod.AVATARS = __import__("pathlib").Path(_tmp) / "avatars"  # 테스트 사진은 임시 폴더에
 MAILS = []  # (받는 사람, 제목, 본문)
 appmod.send_mail = lambda to, subject, text: MAILS.append((to, subject, text))
 
@@ -56,6 +57,45 @@ class FlowTest(unittest.TestCase):
         self.c.get(verify_path("mailuser1@example.com"))
         self.c.post("/api/auth/logout")
         self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 200)
+
+    def test_remember_me(self):
+        self.register("remember1")
+        self.c.post("/api/auth/logout")
+        creds = {"username": "remember1", "password": "password123"}
+        r = self.c.post("/api/auth/login", json=creds)
+        self.assertNotIn("Expires", r.headers["Set-Cookie"])  # 브라우저를 닫으면 끝나는 쿠키
+        r = self.c.post("/api/auth/login", json={**creds, "remember": True})
+        self.assertIn("Expires", r.headers["Set-Cookie"])     # 30일 유지
+
+    def test_avatar(self):
+        import base64
+        import io
+        from PIL import Image
+        me = self.register("avatar1")
+        self.assertIsNone(me["avatar"])
+
+        def data_url(img, fmt):
+            buf = io.BytesIO()
+            img.save(buf, fmt)
+            return f"data:image/{fmt.lower()};base64," + base64.b64encode(buf.getvalue()).decode()
+
+        r = self.c.post("/api/profile/avatar", json={"image": data_url(Image.new("RGB", (400, 300), "red"), "JPEG")})
+        self.assertEqual(r.status_code, 200, r.json)
+        url = r.json["avatar"]
+        png = self.c.get(url)
+        self.assertEqual(png.status_code, 200)
+        self.assertEqual(Image.open(io.BytesIO(png.data)).size, (256, 256))  # 가운데 정사각형으로 잘림
+        png.close()
+        self.assertEqual(self.c.get("/api/auth/me").json["avatar"], url)
+        # 이미지가 아닌 것은 거절
+        bad = "data:image/png;base64," + base64.b64encode(b"<script>alert(1)</script>").decode()
+        self.assertEqual(self.c.post("/api/profile/avatar", json={"image": bad}).status_code, 400)
+        self.assertEqual(self.c.post("/api/profile/avatar", json={"image": "not base64!"}).status_code, 400)
+        # 로그인 없이 불가
+        self.assertEqual(app.test_client().post("/api/profile/avatar", json={"image": bad}).status_code, 401)
+        # 삭제
+        self.assertIsNone(self.c.delete("/api/profile/avatar").json["avatar"])
+        self.assertEqual(self.c.get(url).status_code, 404)
 
     def test_email_code(self):
         body = {"username": "codeuser1", "email": "codeuser1@example.com", "password": "password123"}

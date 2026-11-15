@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>내 프로필 · 블루프린트</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -31,7 +32,15 @@
           : `<p class="hint">아직 발급받지 않았어요.</p>`;
         main.innerHTML = `
           <section class="panel profile-head">
-            <div class="avatar" aria-hidden="true">${App.esc(p.username.slice(0, 1).toUpperCase())}</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              ${p.avatar
+                ? `<img class="avatar" src="${App.esc(p.avatar)}" alt="${App.esc(p.username)} 프로필 사진">`
+                : `<div class="avatar" aria-hidden="true">${App.esc(p.username.slice(0, 1).toUpperCase())}</div>`}
+              <label class="btn ghost avatar-btn">사진 변경
+                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/gif,image/webp" class="sr">
+              </label>
+              ${p.avatar ? `<button type="button" class="btn ghost avatar-btn" id="avatarDel">사진 삭제</button>` : ""}
+            </div>
             <div style="flex:1 1 280px;min-width:0">
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h1>${App.esc(p.username)}</h1>${badge}</div>
               <p class="hint" style="margin:6px 0 0">${p.email ? App.esc(p.email) + " · " : ""}${date(p.createdAt)} 가입</p>
@@ -70,6 +79,29 @@
           if (!confirm("마인크래프트 계정 연동을 해제할까요?")) return;
           await App.api("/api/link", { method: "DELETE" });
           render();
+        });
+        main.querySelector("#avatarFile").onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          if (file.size > 5 * 1024 * 1024) return App.toast("5MB 이하의 이미지를 올려 주세요.");
+          const image = await new Promise((ok, fail) => {
+            const r = new FileReader();
+            r.onload = () => ok(r.result);
+            r.onerror = fail;
+            r.readAsDataURL(file);
+          });
+          try {
+            await App.api("/api/profile/avatar", { method: "POST", body: { image } });
+            App.toast("프로필 사진을 바꿨어요.");
+            location.reload();  // 머리글 사진까지 새로 그린다
+          } catch (err) {
+            App.toast(err.message);
+          }
+        };
+        main.querySelector("#avatarDel")?.addEventListener("click", async () => {
+          if (!confirm("프로필 사진을 삭제할까요?")) return;
+          await App.api("/api/profile/avatar", { method: "DELETE" });
+          location.reload();
         });
         const form = main.querySelector("#pwForm");
         main.querySelector("#pwBtn").onclick = () => { form.hidden = !form.hidden; };

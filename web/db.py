@@ -61,6 +61,7 @@ USER_COLUMNS = {
     "verify_sent_at": "INTEGER",
     "verify_code_hash": "TEXT",          # 메일로 보낸 6자리 코드의 해시 (verify_sent_at 기준으로 만료)
     "verify_attempts": "INTEGER NOT NULL DEFAULT 0",
+    "avatar_ver": "INTEGER",             # 프로필 이미지 버전(올린 시각). NULL 이면 이미지 없음
     "link_key_id": "INTEGER REFERENCES server_keys(id) ON DELETE SET NULL",  # 어느 서버 키로 연동했는지
 }
 
