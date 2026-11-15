@@ -34,7 +34,8 @@ API
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
-테스트: cd web; .venv/Scripts/python -m unittest test_app  (8개)
+테스트: cd web; .venv/Scripts/python -m unittest test_app  (9개)
+운영 실행: deploy/README.md (PRODUCTION / COOKIE_SECURE / TRUST_PROXY 환경변수)
 ```
 
 ## 현재 상태
@@ -48,14 +49,14 @@ API
   - VPS: 이 구조에 가장 잘 맞아요.
   - Render나 Fly.io: 볼륨을 따로 붙여야 해요.
   - 집 PC + Cloudflare Tunnel
-- [ ] 운영용 서버로 바꿔요. waitress(윈도우)나 gunicorn을 쓰고 requirements.txt에 추가해요.
-- [ ] HTTPS 설정을 넣어요. `SESSION_COOKIE_SECURE`를 켜고, 프록시 뒤라면 `ProxyFix`도 넣어요.
-- [ ] 로그인을 여러 번 실패하면 막아요(IP·계정 기준 제한).
-- [ ] 데이터를 영구 저장해요. DB와 instance/ 폴더 위치를 정하고 백업 방법도 정해요.
+- [x] 운영용 서버로 바꿔요. `PRODUCTION=1`이면 waitress로 실행해요.
+- [x] HTTPS 설정을 넣어요. `COOKIE_SECURE=1`, `TRUST_PROXY=1`(ProxyFix)
+- [x] 로그인을 여러 번 실패하면 막아요(아이디 5회, IP 20회 / 10분, 메모리 저장).
+- [x] 데이터 보관·백업 방법을 `deploy/README.md`에 적었어요. 실제 위치는 배포 장소가 정해지면 정해요.
 - [ ] 썸네일 텍스처 정책을 정해요.
   - Mojang 이용 지침은 사용자가 직접 확인하게 안내해요.
   - 대안: 썸네일 PNG만 미리 만들어 배포해요.
-- [ ] 배포 설정 파일과 한국어 설명서를 만들어요. 예: `deploy/README.md`
+- [x] 배포 설정 파일과 한국어 설명서를 만들어요. `deploy/README.md`
 - [ ] 플러그인 `api-url`을 배포 주소로 바꾸는 방법을 플러그인 세션에 알려요.
 
 ## 할 일 (기능)
