@@ -10,16 +10,6 @@
   <main class="wrap">
     <h1 class="page-title">내 보관함</h1>
 
-    <details class="panel fold" id="linkFold" open>
-      <summary id="linkSummary"><b>서버 연동</b></summary>
-      <div class="link-box" id="link"></div>
-    </details>
-
-    <details class="panel server-key fold" id="serverKey">
-      <summary><b id="serverSummary">내 마인크래프트 서버</b> <span class="hint">서버를 직접 운영할 때만 필요해요</span></summary>
-      <div id="serverKeyBody"></div>
-    </details>
-
     <div class="grid" id="grid"></div>
   </main>
   <script src="/app.js"></script>
@@ -27,56 +17,7 @@
     (async () => {
       const user = await App.header("library");
       if (!App.requireLogin(user)) return;
-      const linkEl = document.getElementById("link");
       const grid = document.getElementById("grid");
-
-      // 인게임 연동은 서버마다 따로: 새 서버에서 /tb link 할 때마다 목록이 늘어난다
-      const ago = (t) => t ? new Date(t * 1000).toLocaleDateString("ko-KR") : "—";
-      let links = [], code = null;
-      async function renderLink() {
-        links = await App.api("/api/links");
-        document.getElementById("linkSummary").innerHTML = `<span class="status-dot ${links.length ? "on" : ""}"></span><b>${links.length ? `연동된 서버 ${links.length}곳` : "아직 연동한 서버가 없어요"}</b>`;
-        linkEl.innerHTML = `<div style="min-width:0">
-            <p class="hint">연동 코드를 받아 서버에서 입력하면 그 서버가 목록에 추가돼요. 서버마다 한 번씩 연동해요.</p>
-            ${links.length ? `<ul class="server-list">${links.map((l) => `
-              <li><span><b>${App.esc(l.serverName)}</b> <span class="hint">· ${App.esc(l.minecraft.name || "")} · ${ago(l.linkedAt)} 연동</span></span>
-                <button class="btn ghost" data-unlink="${l.serverId}" aria-label="${App.esc(l.serverName)} 연동 해제">해제</button></li>`).join("")}</ul>` : ""}
-            ${code ? `<p class="hint">연동할 서버에 접속해서 아래 명령어를 입력하세요. 코드는 10분 동안, 한 번만 쓸 수 있어요.</p>
-                 <div class="link-code">${code}</div>
-                 <div class="cmd">/tb link ${code}</div>` : ""}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn primary" id="gen">${code ? "새 코드 발급" : "연동 코드 발급"}</button>
-          </div>`;
-        linkEl.querySelector("#gen").onclick = async () => {
-          code = (await App.api("/api/link/code", { method: "POST" })).code;
-          renderLink();
-          poll(links.length);
-        };
-        linkEl.querySelectorAll("[data-unlink]").forEach((b) => b.onclick = async () => {
-          const l = links.find((x) => x.serverId === Number(b.dataset.unlink));
-          if (!confirm(`${l.serverName} 서버와의 연동을 해제할까요?`)) return;
-          await App.api(`/api/links/${l.serverId}`, { method: "DELETE" });
-          renderLink();
-        });
-      }
-
-      // 코드 발급 후 새 서버가 목록에 생길 때까지 잠깐 동안 자동 확인
-      let pollTimer;
-      function poll(before) {
-        clearInterval(pollTimer);
-        let n = 0;
-        pollTimer = setInterval(async () => {
-          if (++n > 120) return clearInterval(pollTimer);
-          const u = await App.api("/api/auth/me");
-          if (u.linkedServers > before) {
-            clearInterval(pollTimer);
-            code = null;
-            App.toast("서버 연동이 완료됐어요!");
-            renderLink();
-          }
-        }, 5000);
-      }
 
       async function loadLibrary() {
         const list = await App.api("/api/library");
@@ -86,63 +27,8 @@
           : `<div class="empty">보관함이 비었습니다. <a href="/">템플릿 둘러보기 →</a></div>`;
         App.observePreviews(grid);
       }
-
-      // 내 서버: 서버마다 키가 따로. 키 원문은 발급 직후 한 번만 보여 준다
-      const keyEl = document.getElementById("serverKeyBody");
-      async function renderServers(fresh) {
-        const servers = await App.api("/api/servers");
-        document.getElementById("serverSummary").textContent = `내 마인크래프트 서버${servers.length ? ` · ${servers.length}곳` : ""}`;
-        keyEl.innerHTML = `
-          <p class="hint">서버마다 키를 따로 받아 그 서버 플러그인의 <code>config.yml</code> 에 넣어요. 키로는 <b>그 서버에서 연동한 플레이어</b>만 조회할 수 있어요.
-            서버 이름은 config 의 <code>server-name</code> 을 따르고, 비워 두면 <b>Minecraft Server (번호)</b>로 보여요.</p>
-          ${fresh ? `<div class="fresh-key"><p><b>${App.esc(fresh.name)} 키 · 지금만 보여요. 복사해서 안전한 곳에 두세요.</b></p>
-              <div class="cmd mono">api-url: "${App.esc(location.origin)}"<br>api-key: "${App.esc(fresh.key)}"<br>server-name: ""</div>
-              <button class="btn primary" id="copyKey">키 복사</button></div>` : ""}
-          ${servers.length ? `<ul class="server-list">${servers.map((s) => `
-            <li><span><b>${App.esc(s.name)}</b> <span class="hint">· <span class="mono">${App.esc(s.prefix)}…</span> · 연동 ${s.players}명 · 마지막 접속 ${ago(s.lastSeenAt)}</span></span>
-              <span class="row-actions"><button class="btn ghost" data-rekey="${s.id}">키 재발급</button>
-              <button class="btn danger" data-del="${s.id}" aria-label="${App.esc(s.name)} 삭제">삭제</button></span></li>`).join("")}</ul>`
-            : `<p class="hint">아직 등록한 서버가 없어요.</p>`}
-          <button class="btn ${fresh ? "ghost" : "primary"}" id="addServer">서버 추가</button>`;
-        keyEl.querySelector("#copyKey")?.addEventListener("click", async () => {
-          await navigator.clipboard.writeText(fresh.key);
-          App.toast("키를 복사했어요.");
-        });
-        keyEl.querySelector("#addServer").onclick = async () => {
-          try { renderServers(await App.api("/api/servers", { method: "POST" })); }
-          catch (err) { App.toast(err.message); }
-        };
-        keyEl.querySelectorAll("[data-rekey]").forEach((b) => b.onclick = async () => {
-          if (!confirm("새 키를 받으면 지금 키는 바로 못 쓰게 돼요. 그 서버의 config.yml 도 바꿔야 해요. 계속할까요?")) return;
-          renderServers(await App.api(`/api/servers/${b.dataset.rekey}/key`, { method: "POST" }));
-        });
-        keyEl.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
-          if (!confirm("이 서버를 삭제할까요? 키가 막히고 이 서버의 플레이어 연동도 모두 사라져요.")) return;
-          await App.api(`/api/servers/${b.dataset.del}`, { method: "DELETE" });
-          renderServers();
-        });
-      }
-      // 접고 편 상태를 이 브라우저에 기억한다 (저장이 막힌 브라우저면 기본값)
-      for (const id of ["linkFold", "serverKey"]) {
-        const el = document.getElementById(id);
-        try {
-          const saved = localStorage.getItem("fold:" + id);
-          if (saved !== null) el.open = saved === "1";
-        } catch {}
-        el.addEventListener("toggle", () => { try { localStorage.setItem("fold:" + id, el.open ? "1" : "0"); } catch {} });
-      }
-      if (location.hash === "#serverKey") document.getElementById("serverKey").open = true;
-
       if (new URLSearchParams(location.search).get("verified")) App.toast("이메일 인증이 끝났어요. 환영해요!");
       App.bindSaveButtons(grid, user, () => loadLibrary());
-      if (user.isAdmin) {
-        // 관리자 계정은 서버 연동이 필요 없어서 두 칸을 숨긴다
-        document.getElementById("linkFold").hidden = true;
-        document.getElementById("serverKey").hidden = true;
-      } else {
-        renderLink();
-        renderServers();
-      }
       loadLibrary();
     })();
   </script>
