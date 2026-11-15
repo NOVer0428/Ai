@@ -60,13 +60,21 @@
             <div class="panel"><span class="hint">내가 올린 템플릿</span><b>${p.stats.uploads}</b></div>
             <div class="panel"><span class="hint">받은 담기</span><b>${p.stats.savesReceived}</b></div>
           </section>
-          <div class="two-col">
+          ${p.isAdmin
+            // 관리자 계정은 사이트·템플릿·회원 관리 전용이라 서버 연동 칸 대신 관리 바로가기를 보여 준다
+            ? `<section class="panel" style="margin-bottom:20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;border-color:var(--line)">
+                 <div style="flex:1 1 280px"><h2>사이트 관리</h2>
+                   <p class="hint" style="margin:6px 0 0">관리자 계정은 회원·템플릿 관리 전용이라 서버 연동이 필요 없어요.</p></div>
+                 <a class="btn primary" href="/admin">회원 관리</a>
+                 <a class="btn ghost" href="/admin#templates">템플릿 관리</a>
+               </section>`
+            : `<div class="two-col">
             <section class="panel"><h2>연동된 서버</h2>${mc}</section>
             <section class="panel"><h2>내 마인크래프트 서버</h2>
               <p class="hint">서버를 직접 운영할 때만 필요해요. 서버마다 키가 따로 있어요.</p>${key}
               <a class="btn ghost" href="/library#serverKey">서버 관리</a>
             </section>
-          </div>
+          </div>`}
           <h2 style="margin:28px 0 12px">내가 올린 템플릿</h2>
           <div class="grid" id="uploads"></div>`;
         const grid = main.querySelector("#uploads");

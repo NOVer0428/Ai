@@ -41,7 +41,7 @@
       const $ = (id) => document.getElementById(id);
       const esc = App.esc;
       const date = (s) => new Date(s * 1000).toLocaleDateString("ko-KR");
-      let tab = "users", users = [], templates = [];
+      let tab = location.hash === "#templates" ? "templates" : "users", users = [], templates = [];
 
       const STATUS = { verified: ["ok", "인증됨"], unverified: ["wait", "인증 대기"], legacy: ["off", "옛 계정"], inactive: ["off", "비활성"] };
       const badge = (cls, text) => `<span class="badge ${cls}">${text}</span>`;

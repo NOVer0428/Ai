@@ -122,7 +122,6 @@
           renderServers();
         });
       }
-      renderServers();
       // 접고 편 상태를 이 브라우저에 기억한다 (저장이 막힌 브라우저면 기본값)
       for (const id of ["linkFold", "serverKey"]) {
         const el = document.getElementById(id);
@@ -136,7 +135,14 @@
 
       if (new URLSearchParams(location.search).get("verified")) App.toast("이메일 인증이 끝났어요. 환영해요!");
       App.bindSaveButtons(grid, user, () => loadLibrary());
-      renderLink();
+      if (user.isAdmin) {
+        // 관리자 계정은 서버 연동이 필요 없어서 두 칸을 숨긴다
+        document.getElementById("linkFold").hidden = true;
+        document.getElementById("serverKey").hidden = true;
+      } else {
+        renderLink();
+        renderServers();
+      }
       loadLibrary();
     })();
   </script>
