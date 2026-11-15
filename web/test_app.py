@@ -141,6 +141,16 @@ class FlowTest(unittest.TestCase):
             issues = check(data) + strict_check(data)
             self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
 
+    def test_login_rate_limit(self):
+        self.register("ratelimit1")
+        bad = {"username": "ratelimit1", "password": "wrong-password"}
+        for _ in range(5):
+            self.assertEqual(self.c.post("/api/auth/login", json=bad).status_code, 401)
+        self.assertEqual(self.c.post("/api/auth/login", json=bad).status_code, 429)
+        # 막힌 동안에는 맞는 비밀번호도 거절
+        good = {"username": "ratelimit1", "password": "password123"}
+        self.assertEqual(self.c.post("/api/auth/login", json=good).status_code, 429)
+
     def test_form_post_rejected(self):
         r = self.c.post("/api/auth/login", data={"username": "a", "password": "b"})
         self.assertEqual(r.status_code, 415)

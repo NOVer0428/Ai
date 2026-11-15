@@ -42,7 +42,13 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=8 * 1024 * 1024,
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 14,
+    # HTTPS로 운영할 때만 켠다(HTTP 로컬 개발에서 켜면 로그인 쿠키가 안 붙는다)
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
 )
+if os.environ.get("TRUST_PROXY") == "1":
+    # 리버스 프록시(nginx, Cloudflare Tunnel 등) 한 단계 뒤: 실제 IP·https 여부를 X-Forwarded-* 에서 읽는다
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 PLUGIN_API_KEY = load_secret("plugin_api_key.txt", "PLUGIN_API_KEY")
 app.teardown_appcontext(db.close_db)
 
@@ -153,14 +159,32 @@ def register():
     return jsonify(user_json(current_user())), 201
 
 
+# shortcut: 실패 기록을 프로세스 메모리에 둔다(재시작하면 초기화, 워커 1개 기준). 워커를 늘리면 DB로 옮긴다.
+LOGIN_WINDOW = 10 * 60
+LOGIN_MAX_FAILS = {"ip": 20, "user": 5}
+_login_fails = {}
+
+
+def _recent_fails(key, now):
+    times = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW]
+    _login_fails[key] = times
+    return times
+
+
 @app.post("/api/auth/login")
 def login():
     data = body()
-    user = db.get_db().execute(
-        "SELECT * FROM users WHERE username = ?", (str(data.get("username", "")).strip(),)
-    ).fetchone()
+    username = str(data.get("username", "")).strip()
+    now = time.time()
+    keys = {"ip": ("ip", request.remote_addr), "user": ("user", username.lower())}
+    if any(len(_recent_fails(k, now)) >= LOGIN_MAX_FAILS[kind] for kind, k in keys.items()):
+        return err("로그인 시도가 너무 많습니다. 10분 뒤에 다시 시도해 주세요.", 429)
+    user = db.get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     if user is None or not check_password_hash(user["password_hash"], str(data.get("password", ""))):
+        for k in keys.values():
+            _login_fails[k].append(now)
         return err("아이디 또는 비밀번호가 올바르지 않습니다.", 401)
+    _login_fails.pop(keys["user"], None)
     session.clear()
     session.permanent = True
     session["uid"] = user["id"]
@@ -527,4 +551,10 @@ if __name__ == "__main__":
     if not thumbnail.available():
         print("※ 블록 에셋이 없어 단순 미리보기로 표시됩니다. 실제 텍스처 썸네일: python tools/fetch_assets.py")
     print(f"플러그인 API 키: {PLUGIN_API_KEY}  (instance/plugin_api_key.txt)")
-    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 5000)))
+    host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", 5000))
+    if os.environ.get("PRODUCTION") == "1":
+        from waitress import serve
+        print(f"운영 서버(waitress) 시작: http://{host}:{port}")
+        serve(app, host=host, port=port, threads=8)
+    else:
+        app.run(host=host, port=port)
