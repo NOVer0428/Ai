@@ -10,10 +10,13 @@
   <main class="wrap">
     <h1 class="page-title">내 보관함</h1>
 
-    <section class="panel link-box" id="link"></section>
+    <details class="panel fold" id="linkFold" open>
+      <summary id="linkSummary"><b>서버 연동</b></summary>
+      <div class="link-box" id="link"></div>
+    </details>
 
-    <details class="panel server-key" id="serverKey">
-      <summary><b>내 마인크래프트 서버</b> <span class="hint">서버를 직접 운영할 때만 필요해요</span></summary>
+    <details class="panel server-key fold" id="serverKey">
+      <summary><b id="serverSummary">내 마인크래프트 서버</b> <span class="hint">서버를 직접 운영할 때만 필요해요</span></summary>
       <div id="serverKeyBody"></div>
     </details>
 
@@ -32,8 +35,8 @@
       let links = [], code = null;
       async function renderLink() {
         links = await App.api("/api/links");
+        document.getElementById("linkSummary").innerHTML = `<span class="status-dot ${links.length ? "on" : ""}"></span><b>${links.length ? `연동된 서버 ${links.length}곳` : "아직 연동한 서버가 없어요"}</b>`;
         linkEl.innerHTML = `<div style="min-width:0">
-            <div><span class="status-dot ${links.length ? "on" : ""}"></span><b>${links.length ? `연동된 서버 ${links.length}곳` : "아직 연동한 서버가 없어요"}</b></div>
             <p class="hint">연동 코드를 받아 서버에서 입력하면 그 서버가 목록에 추가돼요. 서버마다 한 번씩 연동해요.</p>
             ${links.length ? `<ul class="server-list">${links.map((l) => `
               <li><span><b>${App.esc(l.serverName)}</b> <span class="hint">· ${App.esc(l.minecraft.name || "")} · ${ago(l.linkedAt)} 연동</span></span>
@@ -88,6 +91,7 @@
       const keyEl = document.getElementById("serverKeyBody");
       async function renderServers(fresh) {
         const servers = await App.api("/api/servers");
+        document.getElementById("serverSummary").textContent = `내 마인크래프트 서버${servers.length ? ` · ${servers.length}곳` : ""}`;
         keyEl.innerHTML = `
           <p class="hint">서버마다 키를 따로 받아 그 서버 플러그인의 <code>config.yml</code> 에 넣어요. 키로는 <b>그 서버에서 연동한 플레이어</b>만 조회할 수 있어요.
             서버 이름은 config 의 <code>server-name</code> 을 따르고, 비워 두면 <b>Minecraft Server (번호)</b>로 보여요.</p>
@@ -119,6 +123,15 @@
         });
       }
       renderServers();
+      // 접고 편 상태를 이 브라우저에 기억한다 (저장이 막힌 브라우저면 기본값)
+      for (const id of ["linkFold", "serverKey"]) {
+        const el = document.getElementById(id);
+        try {
+          const saved = localStorage.getItem("fold:" + id);
+          if (saved !== null) el.open = saved === "1";
+        } catch {}
+        el.addEventListener("toggle", () => { try { localStorage.setItem("fold:" + id, el.open ? "1" : "0"); } catch {} });
+      }
       if (location.hash === "#serverKey") document.getElementById("serverKey").open = true;
 
       if (new URLSearchParams(location.search).get("verified")) App.toast("이메일 인증이 끝났어요. 환영해요!");

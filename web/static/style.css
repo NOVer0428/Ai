@@ -227,3 +227,13 @@ img.avatar { object-fit: cover; display: block; }
   padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .server-list .btn { padding: 4px 10px; font-size: 13px; }
 .fresh-key { margin: 10px 0; padding: 12px; border: 2px solid var(--accent); border-radius: var(--radius); }
+/* 접었다 펴는 칸: 제목줄을 누르면 열리고 닫힌다 */
+.fold { margin-bottom: 28px; }
+.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); transition: transform .2s ease; margin-right: 4px; flex: none; }
+.fold[open] > summary::before { transform: rotate(45deg); }
+.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.fold .link-box { margin: 14px 0 0; }
+@media (prefers-reduced-motion: reduce) { .fold > summary::before { transition: none; } }
