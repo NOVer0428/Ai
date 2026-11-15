@@ -116,8 +116,8 @@ class FlowTest(unittest.TestCase):
     def test_builtin_templates(self):
         from seed import seed_templates
         seeds = seed_templates()
-        self.assertEqual(len(seeds), 16)  # 갈림길 모퉁이 주택 + 새 15종
-        self.assertEqual(len({t["name"] for t in seeds}), 16)
+        self.assertEqual(len(seeds), 17)  # 갈림길 모퉁이 주택 + 15종 + 현실형 1종
+        self.assertEqual(len({t["name"] for t in seeds}), 17)
         names = {t["name"] for t in self.c.get("/api/templates").json["templates"]}
         self.assertTrue({t["name"] for t in seeds} <= names)
         self.assertNotIn("아늑한 오두막", names)  # 지운 옛 기본 템플릿
@@ -129,6 +129,16 @@ class FlowTest(unittest.TestCase):
         from template_format import validate
         for t in seed_templates():
             issues = check(validate(t["data"]))
+            self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
+
+    def test_real_templates_strict(self):
+        """현실형 템플릿은 외피 구멍·걸어서 못 가는 가구·떠 있는 블록도 없어야 한다 (qa.strict_check)."""
+        from qa import check, strict_check
+        from template_format import validate
+        from village_real import real_templates
+        for t in real_templates():
+            data = validate(t["data"])
+            issues = check(data) + strict_check(data)
             self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
 
     def test_form_post_rejected(self):

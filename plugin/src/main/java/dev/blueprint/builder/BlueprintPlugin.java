@@ -30,10 +30,11 @@ public final class BlueprintPlugin extends JavaPlugin {
         String key = getConfig().getString("api-key", "");
         String envKey = System.getenv("BLUEPRINT_API_KEY");
         if (envKey != null && !envKey.isBlank()) key = envKey;
-        if (key.isBlank() || key.startsWith("여기에")) {
-            getLogger().warning("config.yml 의 api-key 가 설정되지 않았습니다. 웹사이트 instance/plugin_api_key.txt 값을 넣고 /tb reload 하세요.");
+        api = new ApiClient(url.trim(), key.trim());
+        String problem = api.configProblem();
+        if (problem != null) {
+            getLogger().warning(problem + " 웹사이트 web/instance/plugin_api_key.txt 값을 넣고 /tb reload 하세요.");
         }
-        api = new ApiClient(url, key);
         getLogger().info("웹사이트 주소: " + url);
     }
 

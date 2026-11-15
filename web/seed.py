@@ -55,5 +55,6 @@ def seed_templates():
     """기본 제공 템플릿 목록. 여기서 빠진 기본 템플릿은 DB 에서도 지워진다 (db.init_db)."""
     from seed_townhouse import townhouse_templates
     from seed_village import village_templates
+    from village_real import real_templates
 
-    return townhouse_templates() + village_templates()
+    return townhouse_templates() + village_templates() + real_templates()

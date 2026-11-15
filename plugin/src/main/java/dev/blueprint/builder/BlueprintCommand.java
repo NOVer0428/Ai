@@ -41,6 +41,17 @@ public final class BlueprintCommand implements TabExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        try {
+            return handle(sender, args);
+        } catch (RuntimeException e) {
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "/tb 처리 중 오류", e);
+            sender.sendRichMessage("<red>명령어 처리 중 오류가 났습니다: <white>" + Text.escape(String.valueOf(e.getMessage()))
+                    + "</white> <gray>(자세한 내용은 서버 콘솔)");
+            return true;
+        }
+    }
+
+    private boolean handle(CommandSender sender, String[] args) {
         String sub = args.length == 0 ? "help" : args[0].toLowerCase();
         if (sub.equals("reload")) {
             if (!sender.hasPermission("blueprint.admin")) {

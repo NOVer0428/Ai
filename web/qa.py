@@ -136,3 +136,100 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------- 엄격 점검 (현실형 템플릿)
+# 몸이 지나갈 수 있는 블록 (충돌 없음 또는 열 수 있음)
+BODY_OPEN = PASSABLE + ("_trapdoor", "fence_gate", "_sign", "lever", "redstone_wire", "_sapling", "flower")
+# 걸어서 손이 닿아야 하는 가구
+USE_TARGETS = ("_bed", "chest", "crafting_table", "furnace", "smoker", "barrel", "lectern", "cauldron",
+               "smithing_table", "anvil", "loom", "cartography_table", "grindstone")
+CLOSED_WHEN_SHUT = ("_door", "_trapdoor", "fence_gate")
+
+
+def strict_check(data):
+    """현실형 템플릿 점검.
+      외피 구멍: 문·트랩도어를 닫은 상태에서 바깥 공기가 실내 가구에 닿음(벽·지붕의 빈 곳)
+      걸어서 못 감: 계단 한 칸 높이·머리 위 2칸을 지키며 걸어서 닿지 못하는 가구
+      외톨이 블록: 어느 면에도 붙지 않고 떠 있는 블록"""
+    pal = data["palette"]
+    cells = {(x, y, z): parse(pal[i]) for x, y, z, i in data["blocks"]}
+    sx, sy, sz = data["size"]
+    issues = []
+
+    def inside(p, m=2):
+        return -m <= p[0] < sx + m and 0 <= p[1] < sy + m and -m <= p[2] < sz + m
+
+    def body_open(p):
+        if p not in cells:
+            return True
+        n = cells[p][0]
+        return any(k in n for k in BODY_OPEN)
+
+    def air_open(p):  # 문을 닫았을 때 공기가 지나가는가
+        if p not in cells:
+            return True
+        n = cells[p][0]
+        if any(n.endswith(k) for k in CLOSED_WHEN_SHUT):
+            return False
+        return any(k in n for k in PASSABLE)
+
+    def ground(p):  # 발밑이 받쳐지는가 (템플릿 아래는 땅)
+        b = (p[0], p[1] - 1, p[2])
+        return b[1] < 0 or not body_open(b)
+
+    # 1) 외피 구멍
+    seen = {(-1, 0, -1)}
+    q = deque(seen)
+    while q:
+        x, y, z = q.popleft()
+        for dx, dy, dz in DIRS6:
+            p = (x + dx, y + dy, z + dz)
+            if p not in seen and inside(p, 1) and air_open(p):
+                seen.add(p)
+                q.append(p)
+    targets = [p for p, (n, _) in cells.items() if any(k in n for k in USE_TARGETS)]
+    for p in targets:
+        if any((p[0] + a, p[1] + b, p[2] + c) in seen for a, b, c in DIRS6):
+            issues.append(("외피 구멍(바깥 공기가 닿음)", cells[p][0], p))
+
+    # 2) 걸어서 닿는지
+    def stand(p):
+        if not (body_open(p) and body_open((p[0], p[1] + 1, p[2]))):
+            return False
+        n = cells.get(p, ("",))[0]
+        return ground(p) or n == "ladder"
+
+    start = (-2, 0, -2)
+    reach = {start}
+    q = deque([start])
+    while q:
+        x, y, z = q.popleft()
+        moves = []
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, nz = x + dx, z + dz
+            if body_open((nx, y, nz)) and body_open((nx, y + 1, nz)):
+                for dy in (0, -1, -2, -3):  # 같은 높이로 걷거나 내려가기
+                    t = (nx, y + dy, nz)
+                    if all(body_open((nx, y - k, nz)) for k in range(0, -dy + 1)) and stand(t):
+                        moves.append(t)
+                        break
+            if body_open((x, y + 2, z)) and stand((nx, y + 1, nz)):  # 한 칸 올라가기
+                moves.append((nx, y + 1, nz))
+        if cells.get((x, y, z), ("",))[0] == "ladder":
+            moves += [(x, y + 1, z), (x, y - 1, z)]
+        for t in moves:
+            if t not in reach and inside(t) and stand(t):
+                reach.add(t)
+                q.append(t)
+    body = reach | {(x, y + 1, z) for x, y, z in reach}
+    for p in targets:
+        near = [(p[0] + a, p[1], p[2] + c) for a, c in ((1, 0), (-1, 0), (0, 1), (0, -1))] + [(p[0], p[1] + 1, p[2])]
+        if not any(c in body for c in near):
+            issues.append(("걸어서 못 감", cells[p][0], p))
+
+    # 3) 떠 있는 외톨이 블록
+    for p, (n, _) in cells.items():
+        if not any((p[0] + a, p[1] + b, p[2] + c) in cells for a, b, c in DIRS6) and p[1] > 0:
+            issues.append(("떠 있는 블록", n, p))
+    return issues
