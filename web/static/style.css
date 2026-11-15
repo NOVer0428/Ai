@@ -237,3 +237,6 @@ img.avatar { object-fit: cover; display: block; }
 .fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .fold .link-box { margin: 14px 0 0; }
 @media (prefers-reduced-motion: reduce) { .fold > summary::before { transition: none; } }
+.avatar-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.avatar-actions .avatar-btn { white-space: nowrap; flex: none; }
+.avatar-btn.muted { color: var(--ink-soft); }
