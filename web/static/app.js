@@ -32,6 +32,7 @@ const App = (() => {
       <div class="userbox"></div></div>`;
     el.querySelector(`[data-k="${active}"]`)?.classList.add("active");
     document.body.prepend(el);
+    passwordToggles();  // 로그인·회원가입처럼 처음부터 있는 비밀번호 칸
     const box = el.querySelector(".userbox");
     const user = await me().catch(() => null);
     if (user) {
@@ -255,6 +256,43 @@ const App = (() => {
   }, { rootMargin: "200px" });
   const observePreviews = (root) => root.querySelectorAll("canvas[data-preview]").forEach((c) => io.observe(c));
 
+  // 비밀번호 칸마다 눈 버튼을 붙인다: 감은 눈 = 숨김, 뜬 눈 = 보임. 움직임은 눈 아이콘에만 (style.css .eye)
+  const EYE_SVG = `<svg class="eye is-closed" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <g class="eye-shut"><path d="M3 11c2.5 3.2 5.6 4.8 9 4.8s6.5-1.6 9-4.8"/><path d="M5.6 13.9 4.3 16"/><path d="M9.3 15.4 8.8 17.8"/><path d="M14.7 15.4l.5 2.4"/><path d="M18.4 13.9l1.3 2.1"/></g>
+    <g class="eye-open"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle class="eye-pupil" cx="12" cy="12" r="3.2" fill="currentColor" stroke="none"/></g>
+  </svg>`;
+  function passwordToggles(root = document) {
+    root.querySelectorAll('input[type="password"]:not([data-eye])').forEach((input) => {
+      input.dataset.eye = "1";
+      const wrap = document.createElement("div");
+      wrap.className = "pw-wrap";
+      input.replaceWith(wrap);
+      wrap.append(input);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "eye-btn";
+      if (input.id) btn.setAttribute("aria-controls", input.id);
+      btn.innerHTML = EYE_SVG;
+      const sync = () => {
+        const shown = input.type === "text";
+        const label = shown ? "비밀번호 숨기기" : "비밀번호 보기";
+        btn.setAttribute("aria-label", label);
+        btn.title = label;
+        btn.setAttribute("aria-pressed", shown);
+        btn.classList.toggle("on", shown);
+        btn.firstElementChild.setAttribute("class", `eye ${shown ? "is-open" : "is-closed"}`);
+        input.classList.toggle("pw-shown", shown);
+      };
+      btn.onclick = () => {
+        input.type = input.type === "password" ? "text" : "password";
+        sync();
+      };
+      sync();
+      wrap.append(btn);
+    });
+  }
+
   // 가입·로그인 폼 자리에 6자리 인증 코드 입력 화면을 띄운다. 재전송은 같은 아이디·비밀번호로 로그인을 다시 시도한다.
   function verifyForm(form, { username, email, password, notice }) {
     form.innerHTML = `<h1>인증 코드 입력</h1>
@@ -289,5 +327,5 @@ const App = (() => {
     });
   }
 
-  return { api, me, esc, header, toast, requireLogin, verifyForm, render, blockColor, cardHTML, saveButton, bindSaveButtons, observePreviews, loadData };
+  return { api, me, esc, header, toast, requireLogin, verifyForm, passwordToggles, render, blockColor, cardHTML, saveButton, bindSaveButtons, observePreviews, loadData };
 })();

@@ -104,6 +104,7 @@
           location.reload();
         });
         const form = main.querySelector("#pwForm");
+        App.passwordToggles(form);
         main.querySelector("#pwBtn").onclick = () => { form.hidden = !form.hidden; };
         form.onsubmit = async (e) => {
           e.preventDefault();
