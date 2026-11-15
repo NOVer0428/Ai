@@ -12,6 +12,8 @@
   --ok: #2f7d4f;
   --danger: #b3261e;
   --radius: 6px;
+  --thumb-bg: #e4ddcd;
+  --thumb-hi: #f7f3ea;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   color-scheme: light;
 }
@@ -24,6 +26,8 @@
     --line: #2c3542;
     --grid: rgba(232, 227, 216, 0.04);
     --accent: #f07c45;
+    --thumb-bg: #1f2733;
+    --thumb-hi: #34404f;
     color-scheme: dark;
   }
 }
@@ -107,6 +111,12 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
   display: flex; flex-direction: column; overflow: hidden; text-decoration: none;
 }
 .card canvas { width: 100%; height: 180px; display: block; border-bottom: 2px solid var(--ink); background: var(--paper); }
+.card .thumb-link { display: block; border-bottom: 2px solid var(--ink);
+  background: radial-gradient(ellipse at 50% 40%, var(--thumb-hi), var(--thumb-bg)); }
+.card .thumb-link canvas { border-bottom: 0; }
+.card img.thumb { width: 100%; height: 200px; object-fit: contain; display: block; image-rendering: auto; }
+.viewer img.render { width: 100%; height: 460px; object-fit: contain; display: block; transition: opacity .15s; }
+.viewer img.render.loading { opacity: .45; }
 .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .card h3 { margin: 0; font-size: 17px; }
 .card .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); display: flex; gap: 10px; flex-wrap: wrap; }
@@ -129,7 +139,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 
 /* detail */
 .detail { display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; margin: 30px 0 60px; }
-.detail .viewer { background: var(--card); border: 2px solid var(--ink); border-radius: var(--radius); position: relative; }
+.detail .viewer { background: radial-gradient(ellipse at 50% 40%, var(--thumb-hi), var(--thumb-bg)); border: 2px solid var(--ink); border-radius: var(--radius); position: relative; }
 .detail .viewer canvas { width: 100%; height: 460px; display: block; cursor: grab; }
 .viewer .controls { position: absolute; bottom: 10px; right: 10px; display: flex; gap: 6px; }
 .viewer .layer { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; background: var(--card); padding: 4px 8px; border-radius: var(--radius); border: 1.5px solid var(--line); }
@@ -137,9 +147,10 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .specs { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; margin: 16px 0; }
 .specs dt { color: var(--ink-soft); }
 .specs dd { margin: 0; font-family: var(--mono); }
-.palette { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: 12px; }
+.palette { list-style: none; padding: 0; margin: 0; max-height: 320px; overflow: auto; font-size: 13px; }
 .palette li { display: flex; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px dashed var(--line); }
 .swatch { width: 12px; height: 12px; border: 1px solid rgba(0,0,0,.3); flex: none; }
+.swatch.icon { width: 22px; height: 22px; image-rendering: pixelated; border: 0; }
 .cmd { background: var(--paper); border: 1.5px dashed var(--line); padding: 10px 12px; border-radius: var(--radius); font-family: var(--mono); font-size: 13px; margin-top: 8px; }
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: var(--radius); font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }

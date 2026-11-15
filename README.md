@@ -13,7 +13,7 @@
 | 폴더 | 내용 |
 |------|------|
 | `web/` | 웹사이트. Python 3.12 + Flask, DB는 `web/instance/app.db` (SQLite) |
-| `plugin/` | Paper 1.21.x 플러그인 (Java 21, Gradle) |
+| `plugin/` | **Paper 26.3** 플러그인 (Java 25, Gradle) |
 
 ## 1. 웹사이트 실행
 
@@ -24,6 +24,9 @@ py -m venv .venv
 .venv/Scripts/python app.py
 ```
 
+- (선택, 권장) 실제 블록 텍스처 썸네일: `.venv/Scripts/python tools/fetch_assets.py`
+  - Mojang 공식 26.3 client.jar(약 41MB)를 받아 SHA1 확인 후 블록 텍스처·모델만 `web/instance/assets/`에 꺼냅니다 (저장소에는 커밋하지 않음).
+  - 없으면 단순 색상 미리보기로 표시됩니다.
 - http://127.0.0.1:5000 접속. 처음 실행하면 기본 템플릿 5개가 들어갑니다.
 - 실행 시 콘솔에 **플러그인 API 키**가 출력되고 `web/instance/plugin_api_key.txt` 에 저장됩니다.
 - 외부에서 접속하게 하려면 `HOST=0.0.0.0` 환경변수를 주고, 실제 운영 시에는 HTTPS 리버스 프록시(nginx 등) 뒤에 두세요.

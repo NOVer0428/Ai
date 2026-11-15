@@ -23,13 +23,15 @@
         return;
       }
       document.title = `${t.name} · 블루프린트`;
-      const counts = new Map();
-      for (const b of t.data.blocks) counts.set(b[3], (counts.get(b[3]) || 0) + 1);
-      const palette = [...counts].sort((a, b) => b[1] - a[1]);
+      // 재료 목록: 서버가 아이템 단위(한국어 이름 + 아이콘)로 계산. 에셋이 없으면 블록 id 로 대체
+      const mats = t.materials || [];
+      const matHTML = mats.map((m) => `<li>
+          ${m.icon ? `<img class="swatch icon" src="${m.icon}" alt="" loading="lazy">` : `<span class="swatch"></span>`}
+          <span style="flex:1">${App.esc(m.name)}</span><span>${m.count.toLocaleString()}</span></li>`).join("");
 
       root.innerHTML = `
         <div class="viewer">
-          <canvas id="cv"></canvas>
+          ${t.thumbnail ? `<img id="img" class="render" src="${t.thumbnail}" alt="${App.esc(t.name)} 미리보기">` : `<canvas id="cv"></canvas>`}
           <div class="layer">높이 <input type="range" id="layer" min="0" max="${t.size[1] - 1}" value="${t.size[1] - 1}"><span id="lv">${t.size[1]}</span></div>
           <div class="controls">
             <button class="btn ghost" id="rl" title="왼쪽으로 회전">⟲</button>
@@ -50,22 +52,38 @@
             ${t.mine ? `<button class="btn ghost" id="del">삭제</button>` : ""}
             <button class="btn ghost" id="dl">JSON 다운로드</button></div>
           <h3 style="margin:24px 0 8px">재료 목록</h3>
-          <ul class="palette">${palette.map(([i, n]) =>
-            `<li><span class="swatch" style="background:${App.blockColor(t.data.palette[i])}"></span><span style="flex:1">${App.esc(t.data.palette[i].replace("minecraft:", ""))}</span><span>${n}</span></li>`).join("")}</ul>
+          <ul class="palette">${matHTML}</ul>
         </div>`;
 
-      const cv = document.getElementById("cv");
       const layer = document.getElementById("layer");
-      let rotation = 2;
-      const draw = () => {
-        document.getElementById("lv").textContent = +layer.value + 1;
-        App.render(cv, t.data, { rotation, maxY: +layer.value });
-      };
+      const img = document.getElementById("img");
+      let rotation = 0;
+      let draw;
+      if (img) {
+        // 서버가 실제 블록 텍스처로 그린 이미지: 회전/높이를 바꾸면 다시 요청
+        draw = () => {
+          const top = +layer.value;
+          document.getElementById("lv").textContent = top + 1;
+          const params = new URLSearchParams({ rot: rotation });
+          if (top < t.size[1] - 1) params.set("maxY", top);
+          img.classList.add("loading");
+          img.src = `${t.thumbnail}?${params}`;
+        };
+        img.onload = () => img.classList.remove("loading");
+        layer.onchange = draw;
+        layer.oninput = () => { document.getElementById("lv").textContent = +layer.value + 1; };
+      } else {
+        const cv = document.getElementById("cv");
+        draw = () => {
+          document.getElementById("lv").textContent = +layer.value + 1;
+          App.render(cv, t.data, { rotation: (rotation + 2) % 4, maxY: +layer.value });
+        };
+        layer.oninput = draw;
+        addEventListener("resize", draw);
+        draw();
+      }
       document.getElementById("rl").onclick = () => { rotation = (rotation + 3) % 4; draw(); };
       document.getElementById("rr").onclick = () => { rotation = (rotation + 1) % 4; draw(); };
-      layer.oninput = draw;
-      addEventListener("resize", draw);
-      draw();
 
       App.bindSaveButtons(document.getElementById("actions"), user, (_id, saved, btn) => {
         t.saved = saved;

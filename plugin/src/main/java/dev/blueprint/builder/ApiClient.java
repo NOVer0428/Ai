@@ -37,6 +37,20 @@ public final class ApiClient {
         this.apiKey = apiKey;
     }
 
+    /** 설정값 문제를 한국어로 설명한다. 문제가 없으면 null. */
+    public String configProblem() {
+        if (apiKey == null || apiKey.isBlank() || apiKey.startsWith("여기에")) {
+            return "서버 관리자가 아직 API 키를 설정하지 않았습니다. (plugins/BlueprintBuilder/config.yml 의 api-key)";
+        }
+        if (!apiKey.chars().allMatch(c -> c > 32 && c < 127)) {
+            return "config.yml 의 api-key 에 영문·숫자 외 문자(한글·공백 등)가 들어 있습니다.";
+        }
+        if (!baseUrl.matches("https?://[^\\s]+")) {
+            return "config.yml 의 api-url 이 올바른 주소가 아닙니다. (예: http://127.0.0.1:5000)";
+        }
+        return null;
+    }
+
     public CompletableFuture<JsonObject> link(UUID uuid, String name, String code) {
         JsonObject body = new JsonObject();
         body.addProperty("uuid", uuid.toString());
@@ -71,17 +85,26 @@ public final class ApiClient {
     }
 
     private CompletableFuture<JsonObject> send(String method, String path, JsonObject body) {
-        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(15))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Accept", "application/json");
-        if (body != null) {
-            req.header("Content-Type", "application/json");
-            req.method(method, HttpRequest.BodyPublishers.ofString(GSON.toJson(body), StandardCharsets.UTF_8));
-        } else {
-            req.method(method, HttpRequest.BodyPublishers.noBody());
+        String problem = configProblem();
+        if (problem != null) return CompletableFuture.failedFuture(new ApiException(0, problem));
+        HttpRequest built;
+        try {
+            HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Accept", "application/json");
+            if (body != null) {
+                req.header("Content-Type", "application/json");
+                req.method(method, HttpRequest.BodyPublishers.ofString(GSON.toJson(body), StandardCharsets.UTF_8));
+            } else {
+                req.method(method, HttpRequest.BodyPublishers.noBody());
+            }
+            built = req.build();
+        } catch (IllegalArgumentException e) {
+            return CompletableFuture.failedFuture(new ApiException(0,
+                    "플러그인 설정이 잘못되었습니다. config.yml 의 api-url/api-key 를 확인하세요. (" + e.getMessage() + ")"));
         }
-        return http.sendAsync(req.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+        return http.sendAsync(built, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
                 .handle((res, ex) -> {
                     if (ex != null) {
                         throw new ApiException(0, "웹사이트에 연결할 수 없습니다. (" + rootMessage(ex) + ")");

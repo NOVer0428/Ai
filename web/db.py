@@ -66,19 +66,33 @@ def close_db(_exc=None):
 def init_db():
     conn = connect()
     conn.executescript(SCHEMA)
-    count = conn.execute("SELECT COUNT(*) FROM templates").fetchone()[0]
-    if count == 0:
-        from seed import seed_templates
-        import time
+    # 기본 템플릿(작성자 없음)을 코드와 맞춘다: 없으면 추가, 내용이 바뀌었으면 갱신 (이름 기준)
+    from seed import seed_templates
+    import time
 
-        now = int(time.time())
-        for t in seed_templates():
-            sx, sy, sz = t["data"]["size"]
+    existing = {r[0]: r[1] for r in conn.execute(
+        "SELECT name, data FROM templates WHERE author_id IS NULL")}
+    now = int(time.time())
+    seeds = seed_templates()
+    # 코드에서 빠진 기본 템플릿은 DB 에서도 지운다 (사용자가 올린 템플릿은 건드리지 않음)
+    names = {t["name"] for t in seeds}
+    for old in set(existing) - names:
+        conn.execute("DELETE FROM templates WHERE name = ? AND author_id IS NULL", (old,))
+    for t in seeds:
+        sx, sy, sz = t["data"]["size"]
+        data = json.dumps(t["data"], separators=(",", ":"))
+        values = (t["description"], t["category"], sx, sy, sz, len(t["data"]["blocks"]), data)
+        if t["name"] not in existing:
             conn.execute(
-                "INSERT INTO templates (name, description, category, size_x, size_y, size_z,"
-                " block_count, data, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                (t["name"], t["description"], t["category"], sx, sy, sz,
-                 len(t["data"]["blocks"]), json.dumps(t["data"], separators=(",", ":")), now),
+                "INSERT INTO templates (description, category, size_x, size_y, size_z,"
+                " block_count, data, name, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (*values, t["name"], now),
+            )
+        elif existing[t["name"]] != data:
+            conn.execute(
+                "UPDATE templates SET description=?, category=?, size_x=?, size_y=?, size_z=?,"
+                " block_count=?, data=? WHERE name=? AND author_id IS NULL",
+                (*values, t["name"]),
             )
     conn.commit()
     conn.close()

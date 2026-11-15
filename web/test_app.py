@@ -81,7 +81,13 @@ class FlowTest(unittest.TestCase):
             {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 3]]},
             {"size": [999, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]},
             {"size": [True, 1, 1], "palette": ["minecraft:stone"], "blocks": [[False, 0, 0, False]]},
+            # 26.3 블록 레지스트리 검사: 없는 블록 / 없는 속성 / 허용되지 않은 값
+            {"size": [1, 1, 1], "palette": ["minecraft:not_a_block"], "blocks": [[0, 0, 0, 0]]},
+            {"size": [1, 1, 1], "palette": ["minecraft:stone[facing=north]"], "blocks": [[0, 0, 0, 0]]},
+            {"size": [1, 1, 1], "palette": ["minecraft:oak_stairs[facing=up]"], "blocks": [[0, 0, 0, 0]]},
         ]
+        ok = {"size": [1, 1, 1], "palette": ["minecraft:oak_stairs[facing=east,half=top]"], "blocks": [[0, 0, 0, 0]]}
+        self.assertEqual(self.c.post("/api/templates", json={"name": "ok", "data": ok}).status_code, 201)
         for d in bad:
             r = self.c.post("/api/templates", json={"name": "x", "data": d})
             self.assertEqual(r.status_code, 400, d)
@@ -95,6 +101,45 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
         r = self.c.post("/api/auth/login", json={"username": "BUILDER3", "password": "password123"})
         self.assertEqual(r.status_code, 200)
+
+    @unittest.skipUnless(__import__("thumbnail").available(), "블록 에셋 없음 (tools/fetch_assets.py)")
+    def test_thumbnail(self):
+        tid = self.c.get("/api/templates").json["templates"][0]["id"]
+        for q in ("", "?rot=1", "?maxY=2"):
+            r = self.c.get(f"/api/templates/{tid}/thumbnail.png{q}")
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.data.startswith(b"\x89PNG"))
+        r = self.c.get("/api/blocks/icon.png?state=minecraft:oak_stairs")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.c.get("/api/blocks/icon.png?state=../../app").status_code, 404)
+
+    def test_builtin_templates(self):
+        from seed import seed_templates
+        seeds = seed_templates()
+        self.assertEqual(len(seeds), 17)  # 갈림길 모퉁이 주택 + 15종 + 현실형 1종
+        self.assertEqual(len({t["name"] for t in seeds}), 17)
+        names = {t["name"] for t in self.c.get("/api/templates").json["templates"]}
+        self.assertTrue({t["name"] for t in seeds} <= names)
+        self.assertNotIn("아늑한 오두막", names)  # 지운 옛 기본 템플릿
+
+    def test_builtin_templates_structure(self):
+        """기본 템플릿마다 지지 없는 블록·짝 없는 문/침대·샐 유체·막힌 방이 없어야 한다 (qa.py)."""
+        from qa import check
+        from seed import seed_templates
+        from template_format import validate
+        for t in seed_templates():
+            issues = check(validate(t["data"]))
+            self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
+
+    def test_real_templates_strict(self):
+        """현실형 템플릿은 외피 구멍·걸어서 못 가는 가구·떠 있는 블록도 없어야 한다 (qa.strict_check)."""
+        from qa import check, strict_check
+        from template_format import validate
+        from village_real import real_templates
+        for t in real_templates():
+            data = validate(t["data"])
+            issues = check(data) + strict_check(data)
+            self.assertEqual(issues, [], f"{t['name']}: {issues[:5]}")
 
     def test_form_post_rejected(self):
         r = self.c.post("/api/auth/login", data={"username": "a", "password": "b"})

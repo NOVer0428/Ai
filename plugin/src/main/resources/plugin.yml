@@ -1,7 +1,7 @@
 name: BlueprintBuilder
 version: '${version}'
 main: dev.blueprint.builder.BlueprintPlugin
-api-version: '1.21'
+api-version: '26.3'
 description: 웹사이트 보관함의 건물 템플릿을 불러와 자동 건축합니다.
 commands:
   tb:
