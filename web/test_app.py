@@ -116,8 +116,8 @@ class FlowTest(unittest.TestCase):
     def test_builtin_templates(self):
         from seed import seed_templates
         seeds = seed_templates()
-        self.assertEqual(len(seeds), 17)  # 갈림길 모퉁이 주택 + 15종 + 현실형 1종
-        self.assertEqual(len({t["name"] for t in seeds}), 17)
+        self.assertEqual(len(seeds), 18)  # 갈림길 모퉁이 주택 + 15종 + 현실형 2종
+        self.assertEqual(len({t["name"] for t in seeds}), 18)
         names = {t["name"] for t in self.c.get("/api/templates").json["templates"]}
         self.assertTrue({t["name"] for t in seeds} <= names)
         self.assertNotIn("아늑한 오두막", names)  # 지운 옛 기본 템플릿

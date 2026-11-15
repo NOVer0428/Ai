@@ -31,3 +31,73 @@
 | 모던 | 트인 거실·주방, 밝은 상판 아일랜드 + 어두운 수납장, 체크/밝은 바닥, 소파(계단+카펫), 큰 창, 화분, 숨긴 조명 |
 | 판타지/아늑함 | 벽난로, 체크·무늬 러그, 책장·물약 선반, 촛불, 매단 등, 가마솥, 덩굴, 보라 포인트 |
 | 공방/대장간 | 작업대 줄, 용광로·모루·숫돌, 벽면 도구 선반, 파이프, 주황 불빛 |
+
+## 한옥 (2026-11-15, 국내·해외 영상·글·이미지)
+
+ㄱ자 한옥을 만들기 전에 실제 한옥 자료와 마크 강좌를 함께 봤다. 특정 작품은 복제하지 않고 공통 문법만 적는다.
+
+### 실제 한옥에서 가져온 것
+
+| 부분 | 특징 | 템플릿 적용 |
+|---|---|---|
+| 기단 | 땅 습기·빗물·벌레를 막으려고 높게 쌓는다. 막돌이나 장대석으로 만든다. | 막돌 섞은 기단 1칸, 기둥선 밖 1칸 |
+| 주춧돌·기둥 | 기둥은 주춧돌 위에 선다. 기둥 사이가 1칸(보통 7~10자, 2.1~3m)이다. | 기둥 간격 4블록, 기둥 밑 윤나는 안산암 |
+| 벽 | 기둥·창방·하방이 나무 틀을 이루고, 그 사이를 흰 회벽으로 채운다. | 방해석 회벽 + 가문비 원목 틀 |
+| 창호 | 창 아래 머름(널판), 창은 띠살·창호지. 대청 앞문은 들어열개(위로 접어 올림). | 머름 + 흰 유리판, 대청 앞은 걷어 올린 상태(트임) |
+| 처마 | 깊은 처마가 비를 막고, 여름 해는 가리고 겨울 해는 들인다(기둥선에서 약 30°). | 처마 2칸 |
+| 지붕 곡선 | 추녀가 모서리에서 45°로 걸리고 끝이 들려 앙곡을 만든다. ㄱ자 집에서 두 지붕이 만나는 곳은 회첨이다. | 추녀 끝 2칸 들림, 두 날개 지붕을 높이 지도로 합쳐 회첨 |
+| 팔작지붕 | 아래는 모임지붕(추녀), 위는 맞배라서 옆면에 세모 합각이 생긴다. | 끝 3칸은 모임, 안쪽은 맞배, 경계에 널판 합각벽 |
+| 평면 | ㄱ자 안채는 부엌·안방·대청·건넌방이 이어진다. 대청은 두 방 사이, 부엌은 끝에 붙는다. | 부엌채(북) + 안방·대청·건넌방(몸채) |
+| 마루 | 툇마루는 퇴칸에 까는 마루, 누마루는 바닥을 띄운 마루. 대청 바닥 밑은 바람이 통한다. | 앞쪽 툇마루, 우물마루 대청 |
+| 부엌·온돌 | 아궁이 불길이 방바닥 밑 고래를 지나 굴뚝으로 나간다. 그래서 부엌 바닥이 방보다 낮다. | 흙바닥 부엌이 방보다 한 단 낮음, 아궁이(화로) 위 솥, 뒤뜰 굴뚝 |
+| 대청 | 앞은 트이고 뒤는 벽과 바라지창. 앞뒤 온도차로 바람이 지난다. 천장은 서까래가 보이는 연등천장. | 뒤 바라지창·판문, 지붕 밑 서까래 노출 |
+| 가구 | 안방: 반닫이·장롱·경대·보료. 사랑방·서재: 서안·문갑·사방탁자. 방 한 칸은 약 2.4m. | 상자(반닫이), 통(머릿장), 선반(경대·문갑), 독서대(경상) |
+
+### 마인크래프트 한옥 강좌에서 반복해서 보인 것
+
+- 지붕: 심층암 타일(또는 검은 돌) 계단·반블록, 네 모서리 들림, 용마루 끝 들림, 처마 밑 나무 띠.
+- 벽: 흰 블록(방해석·흰 콘크리트) + 어두운 나무 기둥, 아래는 돌이나 널판.
+- 기단: 안산암·돌 반블록 1~2단, 앞 가운데 넓은 돌계단.
+- 실내: 나무 창살 칸막이(트랩도어), 낮은 탁자, 방석, 종이 등.
+- 재료 목록 (만두민 「완벽한 한옥」): 안산암 반블록, 심층암 타일 계단·반블록, 참나무·짙은 참나무 원목, 방해석, 가문비 다락문·선반, 장식된 항아리.
+
+### 출처
+
+- 실제 한옥 영상
+  - CHAMOOREE TV 「알기쉬운 한옥 용어」: [추녀](https://www.youtube.com/watch?v=mdbOB8GhLOM), [툇마루·쪽마루](https://www.youtube.com/watch?v=KFYr3DEYDHw), [기단](https://www.youtube.com/watch?v=tnRw5ZEWbnA), [누마루](https://www.youtube.com/watch?v=HxocvzwKp_0)
+  - [대청 들어열개](https://www.youtube.com/watch?v=D4mOYd49zW8)
+  - [YTN 사이언스 한옥 특징](https://www.youtube.com/watch?v=b0Bz0EVgtzU)
+  - [한옥의 과학 원리](https://www.youtube.com/watch?v=Z55Ug-VKF8I)
+- 국내 글·자료
+  - [국가기록원 한옥](https://theme.archives.go.kr/next/koreaOfRecord/Hanok.do)
+  - [한옥 구조·칸 설명(다음 카페)](https://m.cafe.daum.net/whachonjung21/J5MO/8)
+  - [한옥 지붕 앙곡·안허리곡 연구](https://koreascience.kr/article/JAKO201421154209919.pdf)
+  - [한옥 창호 분류 연구](https://koreascience.kr/article/JAKO201324753521527.pdf)
+  - [한옥 가이드라인북(머름·들어열개)](https://hanokdbrnd.auri.re.kr/pdf/report_02/2-3-7-가이드라인북.pdf)
+  - [실험한옥 구조 보고서](https://hanokdbrnd.auri.re.kr/pdf/report_01/13.실험한옥%20구조모니터링%20보고서.pdf)
+  - [순천 전통가옥 평면](https://new.suncheon.go.kr/file/pdf/kid_culture_3_3_8.PDF)
+  - [ㄱ자 안채 평면 연구](https://koreascience.kr/article/JAKO197254361264275.pdf)
+  - [온돌 구조](https://m.cafe.daum.net/hanagaduk/MEue/69)
+  - [조선 목가구 기사](https://magazine.hankyung.com/money/article/202101211549c)
+  - [안방·사랑방 가구 기사](https://www.khan.co.kr/article/200603221513291)
+- 해외 글
+  - [광주 한옥 창호·문](https://gwangjunewsgic.com/arts-culture/past/chapter-5/)
+  - [Traditional Korean Furniture Vocabulary](https://www.koreanantiquefurniture.com/?p=12888)
+  - [Minecraft Wiki 지붕 지침(지붕 잇기·높이)](https://minecraft.wiki/w/Tutorial:Roof_construction_guidelines)
+- 마인크래프트 강좌
+  - 국내(완성 화면·재료 목록 확인)
+    - [만두민 완벽한 한옥](https://www.youtube.com/watch?v=73VywfpUfH0)
+    - [한옥 1 리메이크](https://www.youtube.com/watch?v=YigXTvMRR_Q)
+    - [한옥 2](https://www.youtube.com/watch?v=-vVi7IwE7tQ)
+    - [야생 감성 한옥](https://www.youtube.com/watch?v=_b9hKOPnW2s)
+    - [정약용 생가](https://www.youtube.com/watch?v=L2_eZKC-Tkg)
+    - [한옥 만들기](https://www.youtube.com/watch?v=4OuzBKRJ4RE)
+    - [2층 한옥](https://www.youtube.com/watch?v=9gNjGwSzUQE)
+    - [기와지붕 만드는 법](https://www.youtube.com/watch?v=K2EZZdzdKF4)
+    - [간단한 한옥](https://www.youtube.com/watch?v=7m9QwwSN_7E)
+    - [연못 정자](https://www.youtube.com/watch?v=wEBifowx7Ug)
+  - 해외(자막 확인): [Piniks, Roof principle(동아시아 지붕)](https://www.youtube.com/watch?v=EsIPRXdPB_Y). 처마 2칸, 각 변 가운데를 반 칸 낮추고 모서리를 들어 곡선을 만든다. 처마선은 반블록에서 트랩도어로 얇아지게 한다.
+- 핀터레스트 이미지 (사용자 크롬)
+  - "minecraft hanok" 10장: ㄱ자 평면도, 창살 칸막이 실내, 외관
+  - "한옥 외관 기와집" 10장: 실제 한옥 사진·모형
+  - "한옥 대청마루 안방 실내" 10장: 연등천장, 우물마루, 창살창, 좌식 가구
