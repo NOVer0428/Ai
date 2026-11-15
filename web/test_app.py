@@ -180,43 +180,63 @@ class FlowTest(unittest.TestCase):
         other.post("/api/auth/logout")
         self.assertEqual(other.post("/api/auth/login", json={"username": "viewer1", "password": "newpass123"}).status_code, 200)
 
-    def test_server_key_scope(self):
-        # 서버 주인 A, B 가 각자 키를 받는다
+    def test_servers_and_links(self):
+        # 서버 주인 A 는 서버 2개, B 는 1개. 서버마다 키가 따로
         a, b = app.test_client(), app.test_client()
         for client, name in ((a, "owner_a"), (b, "owner_b")):
             self.c = client
             self.register(name)
-        self.assertIsNone(a.get("/api/server-key").json)
-        key_a = a.post("/api/server-key").json["key"]
-        key_b = b.post("/api/server-key").json["key"]
-        self.assertTrue(key_a.startswith("bp_"))
-        self.assertEqual(a.get("/api/server-key").json["prefix"], key_a[:8])
-        ha, hb = {"Authorization": f"Bearer {key_a}"}, {"Authorization": f"Bearer {key_b}"}
+        self.assertEqual(a.get("/api/servers").json, [])
+        a1 = a.post("/api/servers").json
+        a2 = a.post("/api/servers").json
+        b1 = b.post("/api/servers").json
+        self.assertTrue(a1["key"].startswith("bp_"))
+        self.assertEqual([s["name"] for s in a.get("/api/servers").json], ["Minecraft Server (1)", "Minecraft Server (2)"])
+        h = lambda srv, name=None: {"Authorization": f"Bearer {srv['key']}",
+                                    **({"X-Server-Name": __import__("urllib.parse").parse.quote(name)} if name is not None else {})}
 
-        # 플레이어가 A 서버에서 연동
+        # 플레이어가 A1 에서 연동 → 목록 1개, A2 에서 또 연동 → 목록 2개
         self.c = app.test_client()
         self.register("player_a")
         mc = str(uuid.uuid4())
-        code = self.c.post("/api/link/code").json["code"]
-        self.assertEqual(self.c.post("/api/plugin/link", json={"code": code, "uuid": mc, "name": "P"},
-                                     headers=ha).status_code, 200)
-        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=ha).status_code, 200)
-        # B 키로는 남의 서버 플레이어를 못 본다 / 해제·업로드 불가
-        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=hb).status_code, 404)
-        self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/unlink", headers=hb).status_code, 404)
+        for srv in (a1, a2):
+            code = self.c.post("/api/link/code").json["code"]
+            r = self.c.post("/api/plugin/link", json={"code": code, "uuid": mc, "name": "P"}, headers=h(srv))
+            self.assertEqual(r.status_code, 200, r.json)
+        names = lambda: [l["serverName"] for l in self.c.get("/api/links").json]
+        self.assertEqual(names(), ["Minecraft Server (1)", "Minecraft Server (2)"])
+
+        # 서버 이름: 헤더로 보내면 바로 바뀌고, 비우면 다시 번호 이름
+        self.c.get(f"/api/plugin/players/{mc}/library", headers=h(a1, "모닥불 서버"))
+        self.assertEqual(names(), ["모닥불 서버", "Minecraft Server (1)"])
+        self.assertEqual(self.c.post("/api/plugin/server", json={"name": "  "}, headers=h(a1)).json["name"], None)
+        self.assertEqual(names(), ["Minecraft Server (1)", "Minecraft Server (2)"])
+        self.c.post("/api/plugin/server", json={"name": "야생 서버"}, headers=h(a2))
+        self.assertEqual(names(), ["Minecraft Server (1)", "야생 서버"])
+
+        # 연동하지 않은 서버(B1)에서는 이 플레이어가 안 보인다 / 해제·업로드 불가
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=h(b1)).status_code, 404)
+        self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/unlink", headers=h(b1)).status_code, 404)
         data = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
         self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/templates", json={"name": "x", "data": data},
-                                     headers=hb).status_code, 404)
-        # 운영자 키는 전체 접근
-        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=PLUGIN).status_code, 200)
-        self.assertEqual(a.get("/api/server-key").json["players"], 1)
-        # 키를 새로 받으면 옛 키는 막히고, 연동은 새 키로 이어진다
-        new_a = a.post("/api/server-key").json["key"]
-        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=ha).status_code, 401)
-        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library",
-                                    headers={"Authorization": f"Bearer {new_a}"}).status_code, 200)
-        # 로그인 없이 키 발급 불가
-        self.assertEqual(app.test_client().post("/api/server-key").status_code, 401)
+                                     headers=h(b1)).status_code, 404)
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=h(a2)).status_code, 200)
+
+        # 웹에서 서버 하나만 연동 해제
+        self.c.delete(f"/api/links/{a1['id']}")
+        self.assertEqual(names(), ["야생 서버"])
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=h(a1)).status_code, 404)
+        self.assertEqual(a.get("/api/servers").json[1]["players"], 1)
+
+        # 키 재발급: 옛 키는 막히고 연동은 유지
+        new_a2 = a.post(f"/api/servers/{a2['id']}/key").json
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=h(a2)).status_code, 401)
+        self.assertEqual(self.c.get(f"/api/plugin/players/{mc}/library", headers=h(new_a2)).status_code, 200)
+        # 남의 서버는 못 건드림 / 서버 삭제하면 연동도 사라짐
+        self.assertEqual(b.delete(f"/api/servers/{a2['id']}").status_code, 404)
+        self.assertEqual(a.delete(f"/api/servers/{a2['id']}").status_code, 200)
+        self.assertEqual(names(), [])
+        self.assertEqual(app.test_client().post("/api/servers").status_code, 401)
 
     def test_full_flow(self):
         templates = self.c.get("/api/templates").json["templates"]
@@ -241,7 +261,8 @@ class FlowTest(unittest.TestCase):
         r = self.c.post("/api/plugin/link", json={"code": code, "uuid": mc, "name": "Steve"}, headers=PLUGIN)
         self.assertEqual(r.status_code, 200, r.json)
         self.assertEqual(r.json["username"], "builder1")
-        self.assertEqual(self.c.get("/api/auth/me").json["minecraft"]["name"], "Steve")
+        links = self.c.get("/api/links").json
+        self.assertEqual([(l["serverName"], l["minecraft"]["name"]) for l in links], [("Minecraft Server (1)", "Steve")])
 
         # 코드는 1회용
         r = self.c.post("/api/plugin/link", json={"code": code, "uuid": mc, "name": "Steve"}, headers=PLUGIN)
@@ -266,7 +287,7 @@ class FlowTest(unittest.TestCase):
 
         # 인게임 연동 해제
         self.assertEqual(self.c.post(f"/api/plugin/players/{mc}/unlink", headers=PLUGIN).status_code, 200)
-        self.assertIsNone(self.c.get("/api/auth/me").json["minecraft"])
+        self.assertEqual(self.c.get("/api/links").json, [])
 
     def test_validation(self):
         self.register("builder2")

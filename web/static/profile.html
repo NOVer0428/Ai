@@ -20,16 +20,17 @@
         const p = await App.api("/api/profile");
         const badge = p.isAdmin ? `<span class="badge admin">관리자</span>`
           : p.emailVerified ? `<span class="badge ok">이메일 인증됨</span>` : "";
-        const mc = p.minecraft
-          ? `<p><span class="status-dot on"></span><b>${App.esc(p.minecraft.name)}</b></p>
-             <p class="hint">인게임에서 <code>/tb list</code> 로 보관함을 불러와요.</p>
-             <button class="btn ghost" id="unlink">연동 해제</button>`
-          : `<p class="hint">아직 연동하지 않았어요. 내 보관함에서 연동 코드를 받아 인게임에 입력하세요.</p>
+        const mc = p.links.length
+          ? `<ul class="server-list" style="width:100%">${p.links.map((l) => `<li><span><b>${App.esc(l.serverName)}</b>
+               <span class="hint">· ${App.esc(l.minecraft.name || "")}</span></span></li>`).join("")}</ul>
+             <p class="hint">새 서버에서 연동할 때마다 목록이 늘어나요.</p>
+             <a class="btn ghost" href="/library">연동 관리</a>`
+          : `<p class="hint">아직 연동한 서버가 없어요. 내 보관함에서 연동 코드를 받아 서버에서 입력하세요.</p>
              <a class="btn ghost" href="/library">연동하러 가기</a>`;
-        const key = p.serverKey
-          ? `<div class="cmd" style="width:100%">${App.esc(p.serverKey.prefix)}••••••••••••••••</div>
-             <p class="hint">발급 ${date(p.serverKey.createdAt)} · 연동된 플레이어 ${p.serverKey.players}명</p>`
-          : `<p class="hint">아직 발급받지 않았어요.</p>`;
+        const key = p.servers.length
+          ? `<ul class="server-list" style="width:100%">${p.servers.map((s) => `<li><span><b>${App.esc(s.name)}</b>
+               <span class="hint">· <span class="mono">${App.esc(s.prefix)}…</span> · 연동 ${s.players}명</span></span></li>`).join("")}</ul>`
+          : `<p class="hint">아직 등록한 서버가 없어요.</p>`;
         main.innerHTML = `
           <section class="panel profile-head">
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
@@ -60,10 +61,10 @@
             <div class="panel"><span class="hint">받은 담기</span><b>${p.stats.savesReceived}</b></div>
           </section>
           <div class="two-col">
-            <section class="panel"><h2>마인크래프트 계정</h2>${mc}</section>
-            <section class="panel"><h2>내 서버 키</h2>
-              <p class="hint">서버를 직접 운영할 때만 필요해요. 키 원문은 발급할 때 한 번만 보여요.</p>${key}
-              <a class="btn ghost" href="/library#serverKey">${p.serverKey ? "새 키 발급" : "키 발급"}하러 가기</a>
+            <section class="panel"><h2>연동된 서버</h2>${mc}</section>
+            <section class="panel"><h2>내 마인크래프트 서버</h2>
+              <p class="hint">서버를 직접 운영할 때만 필요해요. 서버마다 키가 따로 있어요.</p>${key}
+              <a class="btn ghost" href="/library#serverKey">서버 관리</a>
             </section>
           </div>
           <h2 style="margin:28px 0 12px">내가 올린 템플릿</h2>
@@ -75,11 +76,6 @@
           : `<div class="empty">아직 올린 템플릿이 없어요. <a href="/upload">업로드하기 →</a></div>`;
         App.observePreviews(grid);
         App.bindSaveButtons(grid, user, render);
-        main.querySelector("#unlink")?.addEventListener("click", async () => {
-          if (!confirm("마인크래프트 계정 연동을 해제할까요?")) return;
-          await App.api("/api/link", { method: "DELETE" });
-          render();
-        });
         main.querySelector("#avatarFile").onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;

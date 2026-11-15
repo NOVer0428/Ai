@@ -222,3 +222,8 @@ img.avatar { object-fit: cover; display: block; }
 .eye.is-open .eye-open { opacity: 1; animation: eye-blink 4.5s ease-in-out .9s infinite; }
 @keyframes eye-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
 @media (prefers-reduced-motion: reduce) { .eye-btn, .eye g, .eye-pupil { transition: none !important; animation: none !important; } }
+.server-list { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.server-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.server-list .btn { padding: 4px 10px; font-size: 13px; }
+.fresh-key { margin: 10px 0; padding: 12px; border: 2px solid var(--accent); border-radius: var(--radius); }

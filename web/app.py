@@ -121,34 +121,74 @@ def hash_key(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+SERVER_NAME_MAX = 32
+
+
+def clean_server_name(value):
+    """플러그인 config 의 server-name. 앞뒤 공백 제거, 제어문자 제거, 32자. 비면 None."""
+    name = "".join(ch for ch in str(value or "") if ch.isprintable()).strip()[:SERVER_NAME_MAX]
+    return name or None
+
+
 def plugin_auth(fn):
-    """플러그인 인증. g.key_id: 회원 서버 키면 그 키의 id(자기 서버에서 연동한 플레이어만),
-    사이트 운영자 키(PLUGIN_API_KEY)면 None(전체)."""
+    """플러그인 인증. 키가 가리키는 서버 한 줄을 g.server_id 로 둔다(운영자 키도 서버 한 줄).
+    플러그인이 X-Server-Name 헤더(UTF-8 퍼센트 인코딩)를 보내면 그 값으로 서버 이름을 바로 바꾼다."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        from urllib.parse import unquote
         header = request.headers.get("Authorization", "")
         token = header[7:] if header.startswith("Bearer ") else ""
+        conn = db.get_db()
         if token and hmac.compare_digest(token.encode(), PLUGIN_API_KEY.encode()):
-            g.key_id = None
+            g.server_id = db.operator_server_id(conn)
         else:
-            row = token and db.get_db().execute(
-                "SELECT k.id FROM server_keys k JOIN users u ON u.id = k.user_id"
-                " WHERE k.key_hash = ? AND u.active = 1", (hash_key(token),)).fetchone()
+            row = token and conn.execute(
+                "SELECT s.id FROM servers s JOIN users u ON u.id = s.owner_id"
+                " WHERE s.key_hash = ? AND u.active = 1", (hash_key(token),)).fetchone()
             if not row:
                 return err("플러그인 API 키가 올바르지 않습니다.", 401)
-            g.key_id = row["id"]
+            g.server_id = row["id"]
+        sets, params = ["last_seen_at = ?"], [int(time.time())]
+        if "X-Server-Name" in request.headers:
+            sets.append("name = ?")
+            params.append(clean_server_name(unquote(request.headers["X-Server-Name"])))
+        conn.execute(f"UPDATE servers SET {', '.join(sets)} WHERE id = ?", (*params, g.server_id))
+        conn.commit()
         return fn(*args, **kwargs)
     return wrapper
 
 
+def number_unnamed(rows):
+    """이름 없는 서버에 목록 순서대로 Minecraft Server (1), (2) ... 를 붙인다."""
+    n, out = 0, []
+    for r in rows:
+        if r["name"]:
+            label = r["name"]
+        else:
+            n += 1
+            label = f"Minecraft Server ({n})"
+        out.append((r, label))
+    return out
+
+
+def user_links(user_id):
+    rows = db.get_db().execute(
+        "SELECT l.*, s.name, s.is_operator, s.last_seen_at FROM server_links l JOIN servers s ON s.id = l.server_id"
+        " WHERE l.user_id = ? ORDER BY l.linked_at, l.server_id", (user_id,)).fetchall()
+    return [{"serverId": r["server_id"], "serverName": label, "named": bool(r["name"]),
+             "minecraft": {"uuid": r["mc_uuid"], "name": r["mc_name"]},
+             "linkedAt": r["linked_at"], "lastSeenAt": r["last_seen_at"]} for r, label in number_unnamed(rows)]
+
+
 def user_json(u):
+    links = db.get_db().execute("SELECT COUNT(*) FROM server_links WHERE user_id = ?", (u["id"],)).fetchone()[0]
     return {
         "id": u["id"],
         "username": u["username"],
         "email": u["email"],
         "isAdmin": is_admin(u),
         "avatar": f"/api/users/{u['id']}/avatar.png?v={u['avatar_ver']}" if u["avatar_ver"] else None,
-        "minecraft": {"uuid": u["mc_uuid"], "name": u["mc_name"]} if u["mc_uuid"] else None,
+        "linkedServers": links,
     }
 
 
@@ -595,49 +635,88 @@ def create_link_code(user):
     return jsonify({"code": code, "expiresIn": LINK_CODE_TTL})
 
 
-@app.delete("/api/link")
+@app.get("/api/links")
 @login_required
-def unlink_web(user):
+def my_links(user):
+    """내가 인게임 연동한 서버 목록 (새 서버에서 연동할 때마다 늘어난다)."""
+    return jsonify(user_links(user["id"]))
+
+
+@app.delete("/api/links/<int:server_id>")
+@login_required
+def unlink_server(user, server_id):
     conn = db.get_db()
-    conn.execute("UPDATE users SET mc_uuid = NULL, mc_name = NULL, link_key_id = NULL WHERE id = ?",
-                 (user["id"],))
+    cur = conn.execute("DELETE FROM server_links WHERE user_id = ? AND server_id = ?", (user["id"], server_id))
     conn.commit()
+    if cur.rowcount == 0:
+        return err("연동되지 않은 서버입니다.", 404)
     return jsonify({"ok": True})
 
 
-# ---------------------------------------------------------------- 내 마인크래프트 서버 키
+# ---------------------------------------------------------------- 내 마인크래프트 서버 (서버마다 키가 따로)
 
-def server_key_json(row, players):
-    return {"prefix": row["prefix"], "createdAt": row["created_at"], "players": players}
-
-
-@app.get("/api/server-key")
-@login_required
-def get_server_key(user):
-    conn = db.get_db()
-    row = conn.execute("SELECT * FROM server_keys WHERE user_id = ?", (user["id"],)).fetchone()
-    if row is None:
-        return jsonify(None)
-    players = conn.execute("SELECT COUNT(*) FROM users WHERE link_key_id = ?", (row["id"],)).fetchone()[0]
-    return jsonify(server_key_json(row, players))
+def owned_servers(user_id):
+    rows = db.get_db().execute(
+        "SELECT s.*, (SELECT COUNT(*) FROM server_links l WHERE l.server_id = s.id) AS players"
+        " FROM servers s WHERE s.owner_id = ? ORDER BY s.created_at, s.id", (user_id,)).fetchall()
+    return [{"id": r["id"], "name": label, "named": bool(r["name"]), "prefix": r["prefix"],
+             "players": r["players"], "createdAt": r["created_at"], "lastSeenAt": r["last_seen_at"]}
+            for r, label in number_unnamed(rows)]
 
 
-@app.post("/api/server-key")
-@login_required
-def issue_server_key(user):
-    """새 키 발급. 이미 있으면 키만 바꾼다(같은 id 유지 → 연동된 플레이어는 그대로). 원문은 이번 응답에서만 보여 준다."""
+def new_key():
     token = "bp_" + secrets.token_urlsafe(32)
-    now = int(time.time())
+    return token, hash_key(token), token[:8]
+
+
+SERVERS_MAX = 20
+
+
+@app.get("/api/servers")
+@login_required
+def list_servers(user):
+    return jsonify(owned_servers(user["id"]))
+
+
+@app.post("/api/servers")
+@login_required
+def add_server(user):
+    """서버를 하나 더 등록하고 그 서버 전용 키를 만든다. 키 원문은 이번 응답에서만 보여 준다."""
     conn = db.get_db()
-    conn.execute(
-        "INSERT INTO server_keys (user_id, key_hash, prefix, created_at) VALUES (?, ?, ?, ?)"
-        " ON CONFLICT(user_id) DO UPDATE SET key_hash = excluded.key_hash, prefix = excluded.prefix,"
-        " created_at = excluded.created_at",
-        (user["id"], hash_key(token), token[:8], now))
+    if conn.execute("SELECT COUNT(*) FROM servers WHERE owner_id = ?", (user["id"],)).fetchone()[0] >= SERVERS_MAX:
+        return err(f"서버는 {SERVERS_MAX}개까지 등록할 수 있어요.", 400)
+    token, digest, prefix = new_key()
+    sid = conn.execute("INSERT INTO servers (owner_id, key_hash, prefix, created_at) VALUES (?, ?, ?, ?)",
+                       (user["id"], digest, prefix, int(time.time()))).lastrowid
     conn.commit()
-    row = conn.execute("SELECT * FROM server_keys WHERE user_id = ?", (user["id"],)).fetchone()
-    players = conn.execute("SELECT COUNT(*) FROM users WHERE link_key_id = ?", (row["id"],)).fetchone()[0]
-    return jsonify({**server_key_json(row, players), "key": token}), 201
+    server = next(s for s in owned_servers(user["id"]) if s["id"] == sid)
+    return jsonify({**server, "key": token}), 201
+
+
+@app.post("/api/servers/<int:server_id>/key")
+@login_required
+def reissue_server_key(user, server_id):
+    """그 서버의 키만 바꾼다. 옛 키는 바로 막히고 연동된 플레이어는 그대로."""
+    token, digest, prefix = new_key()
+    conn = db.get_db()
+    cur = conn.execute("UPDATE servers SET key_hash = ?, prefix = ? WHERE id = ? AND owner_id = ?",
+                       (digest, prefix, server_id, user["id"]))
+    conn.commit()
+    if cur.rowcount == 0:
+        return err("내 서버가 아닙니다.", 404)
+    server = next(s for s in owned_servers(user["id"]) if s["id"] == server_id)
+    return jsonify({**server, "key": token})
+
+
+@app.delete("/api/servers/<int:server_id>")
+@login_required
+def delete_server(user, server_id):
+    conn = db.get_db()
+    cur = conn.execute("DELETE FROM servers WHERE id = ? AND owner_id = ?", (server_id, user["id"]))
+    conn.commit()
+    if cur.rowcount == 0:
+        return err("내 서버가 아닙니다.", 404)
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------- 내 프로필
@@ -648,8 +727,6 @@ def profile(user):
     conn = db.get_db()
     uploads = conn.execute(TEMPLATE_SELECT + " WHERE t.author_id = ? ORDER BY t.id DESC",
                            (user["id"],)).fetchall()
-    key = conn.execute("SELECT * FROM server_keys WHERE user_id = ?", (user["id"],)).fetchone()
-    players = key and conn.execute("SELECT COUNT(*) FROM users WHERE link_key_id = ?", (key["id"],)).fetchone()[0]
     library = conn.execute("SELECT COUNT(*) FROM library l JOIN templates t ON t.id = l.template_id"
                            " WHERE l.user_id = ? AND t.active = 1", (user["id"],)).fetchone()[0]
     return jsonify({
@@ -659,7 +736,8 @@ def profile(user):
         "stats": {"library": library, "uploads": len(uploads),
                   "savesReceived": sum(r["saves"] for r in uploads)},
         "uploads": [template_summary(r) for r in uploads],
-        "serverKey": server_key_json(key, players) if key else None,
+        "links": user_links(user["id"]),
+        "servers": owned_servers(user["id"]),
     })
 
 
@@ -764,19 +842,20 @@ def set_active(table, row_id, data):
 @admin_required
 def admin_users(_admin):
     rows = db.get_db().execute("""
-        SELECT u.*, k.prefix AS key_prefix,
-               (SELECT COUNT(*) FROM users p WHERE p.link_key_id = k.id) AS key_players,
+        SELECT u.*,
+               (SELECT COUNT(*) FROM servers s WHERE s.owner_id = u.id) AS server_count,
+               (SELECT GROUP_CONCAT(DISTINCT l.mc_name) FROM server_links l WHERE l.user_id = u.id) AS mc_names,
                (SELECT COUNT(*) FROM library l WHERE l.user_id = u.id) AS library_count,
                (SELECT COUNT(*) FROM templates t WHERE t.author_id = u.id) AS upload_count
-        FROM users u LEFT JOIN server_keys k ON k.user_id = u.id
-        ORDER BY u.id DESC""").fetchall()
+        FROM users u ORDER BY u.id DESC""").fetchall()
     return jsonify([{
         **user_json(u),
         "active": bool(u["active"]),
         "status": "inactive" if not u["active"] else "unverified" if u["email"] and u["verified_at"] is None
                   else "verified" if u["email"] else "legacy",
         "createdAt": u["created_at"],
-        "serverKey": {"prefix": u["key_prefix"], "players": u["key_players"]} if u["key_prefix"] else None,
+        "serverCount": u["server_count"],
+        "mcNames": u["mc_names"].split(",") if u["mc_names"] else [],
         "libraryCount": u["library_count"],
         "uploadCount": u["upload_count"],
     } for u in rows])
@@ -846,18 +925,32 @@ def parse_uuid(value):
         abort(resp)
 
 
-# 회원 서버 키는 자기 키로 연동된 플레이어만 볼 수 있다 (운영자 키 g.key_id=None 은 전체)
-KEY_SCOPE = " AND (:key IS NULL OR link_key_id = :key)"
-
-
 def linked_user(mc_uuid):
-    return db.get_db().execute("SELECT * FROM users WHERE mc_uuid = :uuid AND active = 1" + KEY_SCOPE,
-                               {"uuid": mc_uuid, "key": g.key_id}).fetchone()
+    """이 서버(g.server_id)에서 연동한 플레이어의 웹 계정. 다른 서버에서 한 연동은 보이지 않는다."""
+    return db.get_db().execute(
+        "SELECT u.* FROM users u JOIN server_links l ON l.user_id = u.id"
+        " WHERE l.server_id = ? AND l.mc_uuid = ? AND u.active = 1", (g.server_id, mc_uuid)).fetchone()
+
+
+def server_label(server_id):
+    row = db.get_db().execute("SELECT name FROM servers WHERE id = ?", (server_id,)).fetchone()
+    return row["name"] if row and row["name"] else None
+
+
+@app.post("/api/plugin/server")
+@plugin_auth
+def plugin_server():
+    """플러그인이 켜질 때·config 를 다시 읽을 때 서버 이름을 알린다 ({"name": ""} 면 이름 없음)."""
+    conn = db.get_db()
+    conn.execute("UPDATE servers SET name = ? WHERE id = ?", (clean_server_name(body().get("name")), g.server_id))
+    conn.commit()
+    return jsonify({"id": g.server_id, "name": server_label(g.server_id)})
 
 
 @app.post("/api/plugin/link")
 @plugin_auth
 def plugin_link():
+    """인게임 /tb link 코드: 이 서버에 대한 연동을 하나 추가한다(서버마다 따로)."""
     data = body()
     code = str(data.get("code", "")).strip().upper()
     mc_uuid = parse_uuid(data.get("uuid"))
@@ -869,14 +962,17 @@ def plugin_link():
     if row is None:
         conn.commit()
         return err("연동 코드가 없거나 만료되었습니다. 웹사이트에서 새 코드를 발급받으세요.", 404)
-    # 이 마인크래프트 계정이 다른 웹 계정에 연결돼 있었다면 해제하고 새로 연결
-    conn.execute("UPDATE users SET mc_uuid = NULL, mc_name = NULL, link_key_id = NULL WHERE mc_uuid = ?",
-                 (mc_uuid,))
-    conn.execute("UPDATE users SET mc_uuid = ?, mc_name = ?, link_key_id = ? WHERE id = ?",
-                 (mc_uuid, mc_name, g.key_id, row["user_id"]))
+    # 이 서버에서 같은 마인크래프트 계정이 다른 웹 계정에 연결돼 있었다면 그 연동을 넘겨받는다
+    conn.execute("DELETE FROM server_links WHERE server_id = ? AND mc_uuid = ?", (g.server_id, mc_uuid))
+    conn.execute(
+        "INSERT INTO server_links (user_id, server_id, mc_uuid, mc_name, linked_at) VALUES (?, ?, ?, ?, ?)"
+        " ON CONFLICT(user_id, server_id) DO UPDATE SET mc_uuid = excluded.mc_uuid, mc_name = excluded.mc_name,"
+        " linked_at = excluded.linked_at",
+        (row["user_id"], g.server_id, mc_uuid, mc_name, int(time.time())))
     conn.commit()
     user = conn.execute("SELECT username FROM users WHERE id = ?", (row["user_id"],)).fetchone()
-    return jsonify({"username": user["username"]})
+    label = next(l["serverName"] for l in user_links(row["user_id"]) if l["serverId"] == g.server_id)
+    return jsonify({"username": user["username"], "serverName": label})
 
 
 @app.get("/api/plugin/players/<mc_uuid>")
@@ -892,8 +988,8 @@ def plugin_player(mc_uuid):
 @plugin_auth
 def plugin_unlink(mc_uuid):
     conn = db.get_db()
-    cur = conn.execute("UPDATE users SET mc_uuid = NULL, mc_name = NULL, link_key_id = NULL"
-                       " WHERE mc_uuid = :uuid" + KEY_SCOPE, {"uuid": parse_uuid(mc_uuid), "key": g.key_id})
+    cur = conn.execute("DELETE FROM server_links WHERE server_id = ? AND mc_uuid = ?",
+                       (g.server_id, parse_uuid(mc_uuid)))
     conn.commit()
     if cur.rowcount == 0:
         return err("연동되지 않은 플레이어입니다.", 404)

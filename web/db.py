@@ -48,7 +48,49 @@ CREATE TABLE IF NOT EXISTS server_keys (
     prefix     TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+-- 마인크래프트 서버. 회원은 여러 서버를 등록할 수 있고 서버마다 키가 다르다.
+-- is_operator=1 은 사이트 운영자 키(plugin_api_key.txt)용 서버 한 줄 (owner·key_hash 없음)
+CREATE TABLE IF NOT EXISTS servers (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    key_hash     TEXT UNIQUE,
+    prefix       TEXT,
+    name         TEXT,              -- 플러그인 config 의 server-name. 비어 있으면 화면에 "Minecraft Server (N)"
+    is_operator  INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    last_seen_at INTEGER
+);
+-- 플레이어가 서버마다 따로 하는 인게임 연동. 새 서버에서 연동할 때마다 한 줄씩 는다
+CREATE TABLE IF NOT EXISTS server_links (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    mc_uuid   TEXT NOT NULL,
+    mc_name   TEXT,
+    linked_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, server_id),
+    UNIQUE (server_id, mc_uuid)
+);
 """
+
+
+def operator_server_id(conn):
+    row = conn.execute("SELECT id FROM servers WHERE is_operator = 1").fetchone()
+    if row:
+        return row[0]
+    import time
+    return conn.execute("INSERT INTO servers (is_operator, created_at) VALUES (1, ?)", (int(time.time()),)).lastrowid
+
+
+def migrate_links(conn):
+    """옛 구조(회원당 서버 키 1개, users.mc_uuid 에 연동 1개)를 servers / server_links 로 옮긴다. 한 번만 실행."""
+    conn.execute("INSERT OR IGNORE INTO servers (id, owner_id, key_hash, prefix, created_at)"
+                 " SELECT id, user_id, key_hash, prefix, created_at FROM server_keys")
+    op = operator_server_id(conn)
+    for uid, uuid, name, key_id, now in conn.execute(
+            "SELECT id, mc_uuid, mc_name, link_key_id, created_at FROM users WHERE mc_uuid IS NOT NULL").fetchall():
+        conn.execute("INSERT OR IGNORE INTO server_links (user_id, server_id, mc_uuid, mc_name, linked_at)"
+                     " VALUES (?, ?, ?, ?, ?)", (uid, key_id or op, uuid, name, now))
+    conn.execute("UPDATE users SET mc_uuid = NULL, mc_name = NULL, link_key_id = NULL")
 
 # 기존 DB에 나중에 추가된 열 (없으면 ALTER TABLE 로 붙인다)
 TEMPLATE_COLUMNS = {
@@ -88,6 +130,7 @@ def close_db(_exc=None):
 
 def init_db():
     conn = connect()
+    had_links = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'server_links'").fetchone()
     conn.executescript(SCHEMA)
     for table, columns in (("users", USER_COLUMNS), ("templates", TEMPLATE_COLUMNS)):
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -95,6 +138,8 @@ def init_db():
             if name not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email COLLATE NOCASE)")
+    if not had_links:
+        migrate_links(conn)
     # 기본 템플릿(작성자 없음)을 코드와 맞춘다: 없으면 추가, 내용이 바뀌었으면 갱신 (이름 기준)
     from seed import seed_templates
     import time

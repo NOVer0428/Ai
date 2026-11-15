@@ -59,19 +59,19 @@
         if (tab === "users") {
           $("q").placeholder = "아이디, 이메일, 마크 닉네임";
           $("summary").textContent = `회원 ${users.length}명 · 비활성 ${users.filter((u) => !u.active).length}명`;
-          const rows = users.filter((u) => keep(u, [u.username, u.email, u.minecraft?.name].join(" ")));
-          $("table").innerHTML = `<thead><tr><th>회원</th><th>이메일</th><th>상태</th><th>마인크래프트</th><th>서버 키</th>
+          const rows = users.filter((u) => keep(u, [u.username, u.email, ...u.mcNames].join(" ")));
+          $("table").innerHTML = `<thead><tr><th>회원</th><th>이메일</th><th>상태</th><th>마인크래프트</th><th>내 서버</th><th>연동 서버</th>
               <th>보관함 · 업로드</th><th>가입일</th><th>관리</th></tr></thead><tbody>${rows.map((u) => `
             <tr class="${u.active ? "" : "off"}">
               <td><b>${esc(u.username)}</b></td>
               <td>${u.email ? esc(u.email) : `<span class="hint">(이메일 없음)</span>`}</td>
               <td>${u.isAdmin ? badge("admin", "관리자") : badge(...STATUS[u.status])}</td>
-              <td>${u.minecraft ? esc(u.minecraft.name) : "—"}</td>
-              <td class="mono">${u.serverKey ? `${esc(u.serverKey.prefix)}… · ${u.serverKey.players}명` : "—"}</td>
+              <td>${u.mcNames.length ? esc(u.mcNames.join(", ")) : "—"}</td>
+              <td>${u.serverCount ? `${u.serverCount}개` : "—"}</td><td>${u.linkedServers ? `${u.linkedServers}곳` : "—"}</td>
               <td>${u.libraryCount} · ${u.uploadCount}</td>
               <td class="mono">${date(u.createdAt)}</td>
               <td>${u.isAdmin ? `<span class="hint">—</span>` : actions(u, u.username)}</td>
-            </tr>`).join("") || `<tr><td colspan="8" class="hint">조건에 맞는 회원이 없어요.</td></tr>`}</tbody>`;
+            </tr>`).join("") || `<tr><td colspan="9" class="hint">조건에 맞는 회원이 없어요.</td></tr>`}</tbody>`;
           $("note").textContent = "비활성 회원: 로그인 불가, 플러그인 연동·서버 키 중지. 삭제하면 계정, 보관함, 올린 템플릿이 모두 지워져요.";
         } else {
           $("q").placeholder = "템플릿 이름, 작성자";

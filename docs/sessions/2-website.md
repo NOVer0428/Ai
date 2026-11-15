@@ -35,7 +35,10 @@ API
 - /api/profile/avatar (POST {image: data URL} 5MB 이하 → 256px PNG로 다시 저장, DELETE), /api/users/<id>/avatar.png. 파일은 instance/avatars/
 - 로그인 {remember: true} = 30일 유지 쿠키, 아니면 브라우저 세션 쿠키. 탭 아이콘 static/favicon.svg(+favicon.ico)
 - /api/admin/users, /api/admin/templates (GET 목록), .../<id>/active (POST {active}), .../<id> (DELETE). ADMIN_USERS 환경변수의 아이디만. 비활성 템플릿은 작성자·관리자만 보고, 비활성 회원은 로그인·플러그인 차단. 회원 삭제 시 올린 템플릿도 삭제, 기본 템플릿은 삭제 불가(비활성화만)
-- /api/server-key (GET 정보, POST 발급·재발급): 회원 서버 키. 플러그인 API는 운영자 키(전체) 또는 회원 키(그 키로 연동한 플레이어만)
+- /api/servers (GET 내 서버 목록, POST 서버 추가→키 1회 표시), /api/servers/<id>/key (POST 재발급), /api/servers/<id> (DELETE)
+- /api/links (GET 내가 연동한 서버 목록), /api/links/<server_id> (DELETE 그 서버만 해제). 인게임 연동은 서버마다 따로(server_links)
+- 플러그인: 키 하나 = 서버 하나(servers). X-Server-Name 헤더(UTF-8 퍼센트 인코딩)로 이름 즉시 갱신, POST /api/plugin/server {name}. 이름 없으면 "Minecraft Server (N)". 운영자 키 = is_operator 서버
+- 플러그인 작업 지시: docs/sessions/1-plugin-server-links.md
 - /api/items/<item>/icon.png, /api/blocks/icon.png?state=
 - /api/plugin/* : 플러그인 전용 (세션 1 문서 참고) — 바꾸면 플러그인 세션에 알린다
 
