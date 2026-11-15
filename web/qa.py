@@ -192,6 +192,17 @@ def strict_check(data):
     for p in targets:
         if any((p[0] + a, p[1] + b, p[2] + c) in seen for a, b, c in DIRS6):
             issues.append(("외피 구멍(바깥 공기가 닿음)", cells[p][0], p))
+    # 벽 속 계단·반블록: 한쪽은 바깥 공기, 반대쪽은 실내 공기면 빈 곳으로 밖이 보인다
+    # (계단은 디딤판 세운 면이 막고 있어 계단 방향 축으로는 안 보이고, 옆 방향 축으로만 뚫린다)
+    for p, (n, props) in cells.items():
+        if not (n.endswith("_stairs") or n.endswith("_slab") and props.get("type") != "double"):
+            continue
+        f = FACE.get(props.get("facing")) if n.endswith("_stairs") else None
+        axes = [(f[2], f[0])] if f else [(1, 0), (0, 1)]       # 계단: 방향과 직각인 축만
+        for dx, dz in axes:
+            a, b = (p[0] + dx, p[1], p[2] + dz), (p[0] - dx, p[1], p[2] - dz)
+            if any(o in seen and i not in seen and inside(i, 0) and air_open(i) for o, i in ((a, b), (b, a))):
+                issues.append(("벽 속 계단·반블록 틈(밖이 보임)", n, p))
 
     # 2) 걸어서 닿는지
     def stand(p):
@@ -199,6 +210,18 @@ def strict_check(data):
             return False
         n = cells.get(p, ("",))[0]
         return ground(p) or n == "ladder"
+
+    def surface(p, came=None):
+        """p 칸에 선 발의 높이. 밑이 아래쪽 반블록이면 반 칸 낮다.
+        계단은 낮은 쪽(올라가는 방향과 계단 방향이 같을 때)으로 들어설 때만 반 칸, 옆·뒤에서는 한 칸."""
+        n, props = cells.get((p[0], p[1] - 1, p[2]), ("", {}))
+        if n.endswith("_slab") and props.get("type") == "bottom" or n.endswith("_bed"):   # 침대 높이 0.56
+            return p[1] - 0.5
+        if n.endswith("_stairs") and props.get("half") == "bottom" and came is not None:
+            f = FACE.get(props.get("facing"))
+            if f and (f[0], f[2]) == came:
+                return p[1] - 0.5
+        return p[1]
 
     start = (-2, 0, -2)
     reach = {start}
@@ -214,7 +237,10 @@ def strict_check(data):
                     if all(body_open((nx, y - k, nz)) for k in range(0, -dy + 1)) and stand(t):
                         moves.append(t)
                         break
-            if body_open((x, y + 2, z)) and stand((nx, y + 1, nz)):  # 한 칸 올라가기
+            # 한 칸 올라가기: 실제 단차가 반 칸 이하일 때만 (점프 없이 걷는 높이 0.6)
+            on_ladder = cells.get((x, y, z), ("",))[0] == "ladder"     # 사다리 끝에서는 타고 올라 내림
+            if (body_open((x, y + 2, z)) and stand((nx, y + 1, nz))
+                    and (on_ladder or surface((nx, y + 1, nz), (dx, dz)) - surface((x, y, z)) <= 0.6)):
                 moves.append((nx, y + 1, nz))
         if cells.get((x, y, z), ("",))[0] == "ladder":
             moves += [(x, y + 1, z), (x, y - 1, z)]
@@ -227,6 +253,16 @@ def strict_check(data):
         near = [(p[0] + a, p[1], p[2] + c) for a, c in ((1, 0), (-1, 0), (0, 1), (0, -1))] + [(p[0], p[1] + 1, p[2])]
         if not any(c in body for c in near):
             issues.append(("걸어서 못 감", cells[p][0], p))
+
+    # 문 앞뒤 두 칸은 몸이 지나갈 수 있어야 한다 (들어서자마자 가구에 막히지 않게)
+    for p, (n, props) in cells.items():
+        f = FACE.get(props.get("facing"))
+        if not (n.endswith("_door") and props.get("half") == "lower" and f):
+            continue
+        for s in (1, -1):
+            ahead = [(p[0] + f[0] * s * k, p[1] + h, p[2] + f[2] * s * k) for k in (1, 2) for h in (0, 1)]
+            if not all(body_open(c) for c in ahead):
+                issues.append(("문 앞이 막힘", n, p))
 
     # 3) 떠 있는 외톨이 블록
     for p, (n, _) in cells.items():
