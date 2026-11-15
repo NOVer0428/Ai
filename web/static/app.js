@@ -421,7 +421,7 @@ const App = (() => {
       e.preventDefault();
       try {
         await api("/api/auth/verify-code", { method: "POST", body: { username, code: input.value } });
-        location.href = "/library?verified=1";
+        location.href = "/";  // 가입·인증이 끝나면 템플릿 목록으로
       } catch (err) {
         error.textContent = err.message;
       }
@@ -429,7 +429,7 @@ const App = (() => {
     form.querySelector("#resend")?.addEventListener("click", async () => {
       try {
         await api("/api/auth/login", { method: "POST", body: { username, password } });
-        location.href = "/library";  // 그사이 링크로 인증을 마친 경우
+        location.href = "/";  // 그사이 인증을 마친 경우
       } catch (err) {
         error.textContent = err.message;
       }

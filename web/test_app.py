@@ -17,13 +17,13 @@ from app import app  # noqa: E402
 
 PLUGIN = {"Authorization": "Bearer test-key"}
 appmod.AVATARS = __import__("pathlib").Path(_tmp) / "avatars"  # 테스트 사진은 임시 폴더에
-MAILS = []  # (받는 사람, 제목, 본문)
-appmod.send_mail = lambda to, subject, text: MAILS.append((to, subject, text))
+MAILS = []  # (받는 사람, 제목, 글자 본문, HTML 본문)
+appmod.send_mail = lambda to, subject, text, html=None: MAILS.append((to, subject, text, html))
 
 
-def verify_path(email):
-    text = next(t for to, _, t in reversed(MAILS) if to == email)
-    return re.search(r"https?://[^/]+(/verify\?token=\S+)", text).group(1)
+def mail_code(email):
+    mail = next(m for m in reversed(MAILS) if m[0] == email)
+    return re.search(r"인증 코드: (\d{6})", mail[2]).group(1)
 
 
 class FlowTest(unittest.TestCase):
@@ -34,9 +34,8 @@ class FlowTest(unittest.TestCase):
         email = f"{name}@example.com"
         r = self.c.post("/api/auth/register", json={"username": name, "email": email, "password": "password123"})
         self.assertEqual(r.status_code, 201, r.json)
-        r = self.c.get(verify_path(email))
-        self.assertEqual(r.status_code, 302)
-        self.assertIn("/library?verified=1", r.headers["Location"])
+        r = self.c.post("/api/auth/verify-code", json={"username": name, "code": mail_code(email)})
+        self.assertEqual(r.status_code, 200, r.json)
         return self.c.get("/api/auth/me").json
 
     def test_email_verification(self):
@@ -54,7 +53,11 @@ class FlowTest(unittest.TestCase):
         bad = {"username": "mailuser3", "email": "not-an-email", "password": "password123"}
         self.assertEqual(self.c.post("/api/auth/register", json=bad).status_code, 400)
         # 인증 후 로그인
-        self.c.get(verify_path("mailuser1@example.com"))
+        mail = next(m for m in reversed(MAILS) if m[0] == "mailuser1@example.com")
+        self.assertNotIn("/verify?token=", mail[2] + mail[3])  # 링크는 보내지 않는다
+        code = mail_code("mailuser1@example.com")
+        self.assertIn(f'<b style="font-size:18px;font-weight:900;letter-spacing:2px">{code}</b>', mail[3])
+        self.c.post("/api/auth/verify-code", json={"username": "mailuser1", "code": code})
         self.c.post("/api/auth/logout")
         self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 200)
 
@@ -100,8 +103,7 @@ class FlowTest(unittest.TestCase):
     def test_email_code(self):
         body = {"username": "codeuser1", "email": "codeuser1@example.com", "password": "password123"}
         self.assertEqual(self.c.post("/api/auth/register", json=body).status_code, 201)
-        code = re.search(r"인증 코드: (\d{6})", next(t for to, _, t in reversed(MAILS)
-                                                     if to == "codeuser1@example.com")).group(1)
+        code = mail_code("codeuser1@example.com")
         wrong = "000000" if code != "000000" else "111111"
         r = self.c.post("/api/auth/verify-code", json={"username": "CodeUser1", "code": wrong})
         self.assertEqual(r.status_code, 400)
@@ -119,7 +121,7 @@ class FlowTest(unittest.TestCase):
         # 5번 틀리면 맞는 코드도 거절
         body = {"username": "codeuser2", "email": "codeuser2@example.com", "password": "password123"}
         self.c.post("/api/auth/register", json=body)
-        code = re.search(r"인증 코드: (\d{6})", MAILS[-1][2]).group(1)
+        code = mail_code("codeuser2@example.com")
         wrong = "000000" if code != "000000" else "111111"
         for _ in range(5):
             self.c.post("/api/auth/verify-code", json={"username": "codeuser2", "code": wrong})

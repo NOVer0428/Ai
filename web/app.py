@@ -257,7 +257,7 @@ CODE_MAX_TRIES = 5   # 코드 하나당 틀릴 수 있는 횟수. 넘으면 새 
 verify_tokens = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="email-verify")
 
 
-def send_mail(to, subject, text):
+def send_mail(to, subject, text, html=None):
     """MAIL_USER/MAIL_PASSWORD(Gmail 앱 비밀번호)가 있으면 SMTP로 보내고, 없으면 로그에 찍는다(개발용)."""
     user, password = os.environ.get("MAIL_USER"), os.environ.get("MAIL_PASSWORD")
     if not (user and password):
@@ -265,9 +265,15 @@ def send_mail(to, subject, text):
         return
     import smtplib
     from email.message import EmailMessage
+    from email.utils import formatdate, make_msgid
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = f"블루프린트 <{user}>", to, subject
-    msg.set_content(text)
+    # Date·Message-ID 가 없으면 스팸 점수가 올라간다
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=user.split("@")[-1])
+    msg.set_content(text)                 # 일반 글자 본문 (HTML 을 못 보는 메일 앱용)
+    if html:
+        msg.add_alternative(html, subtype="html")
     with smtplib.SMTP(os.environ.get("MAIL_HOST", "smtp.gmail.com"),
                       int(os.environ.get("MAIL_PORT", 587)), timeout=20) as s:
         s.starttls()
@@ -279,15 +285,23 @@ def code_hash(user_id, code):
     return hashlib.sha256(f"{user_id}:{code}".encode()).hexdigest()
 
 
+VERIFY_MAIL_HTML = """<!doctype html>
+<html lang="ko"><body style="margin:0;padding:24px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#1d2a3a">
+<p style="margin:0 0 12px;font-size:15px">블루프린트 가입 인증 코드예요.</p>
+<p style="margin:0 0 12px;font-size:15px">인증 코드: <b style="font-size:18px;font-weight:900;letter-spacing:2px">{code}</b></p>
+<p style="margin:0 0 12px;font-size:15px">가입 화면에 위 6자리 코드를 입력하세요. 코드는 30분 동안 유효합니다.</p>
+<p style="margin:0;font-size:15px;color:#5b6676">직접 가입하지 않았다면 이 메일을 무시하세요.</p>
+</body></html>"""
+
+
 def send_verify_mail(user_id, email):
-    """6자리 코드와 링크를 함께 보낸다. 새로 보내면 이전 코드는 무효."""
+    """6자리 코드만 보낸다(링크 없음). 코드는 본문(15px)보다 3px 큰 18px 굵은 글씨. 새로 보내면 이전 코드는 무효."""
     code = f"{secrets.randbelow(10**6):06d}"
-    token = verify_tokens.dumps({"uid": user_id, "email": email})
-    link = request.host_url.rstrip("/") + "/verify?token=" + token
     send_mail(email, f"[블루프린트] 인증 코드 {code}",
-              f"인증 코드: {code}\n\n가입 화면에 위 6자리 코드를 입력하세요. 코드는 30분 동안 유효합니다.\n\n"
-              f"코드 대신 아래 링크를 눌러도 됩니다(24시간 유효).\n{link}\n\n"
-              "직접 가입하지 않았다면 이 메일을 무시하세요.")
+              f"블루프린트 가입 인증 코드예요.\n\n인증 코드: {code}\n\n"
+              "가입 화면에 위 6자리 코드를 입력하세요. 코드는 30분 동안 유효합니다.\n\n"
+              "직접 가입하지 않았다면 이 메일을 무시하세요.",
+              html=VERIFY_MAIL_HTML.format(code=code))
     db.get_db().execute(
         "UPDATE users SET verify_sent_at = ?, verify_code_hash = ?, verify_attempts = 0 WHERE id = ?",
         (int(time.time()), code_hash(user_id, code), user_id))
@@ -361,7 +375,7 @@ def verify_email():
                      (int(time.time()), user["id"]))
         conn.commit()
     log_in(user)
-    return redirect("/library?verified=1")
+    return redirect("/")
 
 
 @app.post("/api/auth/verify-code")

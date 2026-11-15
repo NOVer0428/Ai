@@ -29,9 +29,9 @@
     // 같은 사이트 주소로만 이동 (/\evil.com 같은 우회 차단)
     const safeNext = (() => {
       try {
-        const u = new URL(new URLSearchParams(location.search).get("next") || "/library", location.origin);
-        return u.origin === location.origin ? u.pathname + u.search : "/library";
-      } catch { return "/library"; }
+        const u = new URL(new URLSearchParams(location.search).get("next") || "/", location.origin);
+        return u.origin === location.origin ? u.pathname + u.search : "/";
+      } catch { return "/"; }
     })();
     if (new URLSearchParams(location.search).get("verify") === "invalid") {
       document.getElementById("error").textContent =
