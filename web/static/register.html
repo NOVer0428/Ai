@@ -18,7 +18,8 @@
       <label for="email">이메일</label>
       <input id="email" type="email" autocomplete="email" required maxlength="254">
       <div class="hint">가입을 마치려면 이 주소로 오는 6자리 인증 코드를 입력해야 해요.</div>
-      <label for="password">비밀번호</label>
+      <div class="label-row"><label for="password">비밀번호</label>
+        <button type="button" class="btn ghost suggest-btn" id="suggestPw">강력한 비밀번호 추천</button></div>
       <input id="password" type="password" autocomplete="new-password" required minlength="8" maxlength="15">
       <div class="hint">8~15자 · 숫자, 영어 소문자, 영어 대문자, 특수문자(! ? / \ | @ # $ % ^ &amp; *)를 모두 넣어 주세요 · 아이디와 같거나 비슷하면 안 돼요</div>
       <label for="password2">비밀번호 확인</label>
@@ -44,6 +45,30 @@
     const agreeAll = document.getElementById("agreeAll");
     const agreeEach = ["agreeTerms", "agreePrivacy", "agreeAge"].map((id) => document.getElementById(id));
     agreeAll.onchange = () => agreeEach.forEach((c) => { c.checked = agreeAll.checked; });
+
+    // 강력한 비밀번호 추천: 규칙(12자, 숫자·소문자·대문자·특수문자 모두)을 만족하는 무작위 비밀번호를 두 칸에 채운다
+    document.getElementById("suggestPw").onclick = async () => {
+      const sets = ["abcdefghijkmnpqrstuvwxyz", "ABCDEFGHJKLMNPQRSTUVWXYZ", "23456789", "!?@#$%^&*"];
+      const pick = (s) => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
+      const id = document.getElementById("username").value.trim().toLowerCase();
+      let pw;
+      do {
+        const chars = sets.map(pick);                                      // 종류마다 하나씩은 꼭
+        while (chars.length < 12) chars.push(pick(sets.join("")));
+        for (let i = chars.length - 1; i > 0; i--) {                        // 섞기
+          const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+          [chars[i], chars[j]] = [chars[j], chars[i]];
+        }
+        pw = chars.join("");
+      } while (id.length >= 3 && pw.toLowerCase().includes(id.slice(0, 3)));  // 아이디와 겹치면 다시
+      for (const fid of ["password", "password2"]) {
+        const input = document.getElementById(fid);
+        input.value = pw;
+        if (input.type === "password") input.parentElement.querySelector(".eye-btn")?.click();  // 눈을 떠서 보여 준다
+      }
+      try { await navigator.clipboard.writeText(pw); App.toast("추천 비밀번호를 채우고 복사했어요. 안전한 곳에 저장해 두세요."); }
+      catch { App.toast("추천 비밀번호를 채웠어요. 안전한 곳에 적어 두세요."); }
+    };
     agreeEach.forEach((c) => c.onchange = () => { agreeAll.checked = agreeEach.every((x) => x.checked); });
     document.getElementById("form").onsubmit = async (e) => {
       e.preventDefault();

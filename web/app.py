@@ -350,6 +350,16 @@ VERIFY_MAIL_HTML = """<!doctype html>
 </body></html>"""
 
 
+RESET_MAIL_HTML = """<!doctype html>
+<html lang="ko"><body style="margin:0;padding:24px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#1d2a3a">
+<p style="margin:0 0 12px;font-size:15px">블루프린트 비밀번호 재설정 코드예요.</p>
+<p style="margin:0 0 12px;font-size:15px">재설정 코드: <b style="font-size:18px;font-weight:900;letter-spacing:2px">{code}</b></p>
+<p style="margin:0 0 12px;font-size:15px">아이디: <b>{username}</b></p>
+<p style="margin:0 0 12px;font-size:15px">비밀번호 재설정 화면에 위 6자리 코드와 새 비밀번호를 입력하세요. 코드는 30분 동안 유효합니다.</p>
+<p style="margin:0;font-size:15px;color:#5b6676">직접 요청하지 않았다면 이 메일을 무시하세요. 비밀번호는 바뀌지 않아요.</p>
+</body></html>"""
+
+
 def send_verify_mail(user_id, email):
     """6자리 코드만 보낸다(링크 없음). 코드는 본문(15px)보다 3px 큰 18px 굵은 글씨. 새로 보내면 이전 코드는 무효."""
     code = f"{secrets.randbelow(10**6):06d}"
@@ -639,6 +649,7 @@ def get_template(tid):
     out["data"] = json.loads(row["data"])
     out["materials"] = materials.materials(out["data"])
     out["mine"] = bool(user and row["author_id"] == user["id"])
+    out["canEdit"] = row["author_id"] is not None and (out["mine"] or is_admin(user))
     return jsonify(out)
 
 
@@ -753,6 +764,47 @@ def insert_template(user, data):
                 thumbnail.thumbnail_path(tid, data_json)
         threading.Thread(target=render, daemon=True).start()
     return jsonify({"id": cur.lastrowid}), 201
+
+
+@app.put("/api/templates/<int:tid>")
+@login_required
+def update_template(user, tid):
+    """내가 올린 템플릿(메인 관리자는 회원 템플릿 전부)의 이름·분류·설명과 파일(data)을 고친다.
+    기본 템플릿은 서버를 켤 때 코드로 다시 맞춰지므로 고칠 수 없다. data 를 빼면 내용은 그대로 둔다."""
+    conn = db.get_db()
+    row = conn.execute("SELECT author_id FROM templates WHERE id = ?", (tid,)).fetchone()
+    if row is None:
+        return err("템플릿을 찾을 수 없습니다.", 404)
+    if row["author_id"] is None:
+        return err("기본 템플릿은 수정할 수 없어요.", 403)
+    if row["author_id"] != user["id"] and not is_admin(user):
+        return err("내가 올린 템플릿만 수정할 수 있습니다.", 403)
+    data = body()
+    name = str(data.get("name", "")).strip()
+    if not 1 <= len(name) <= 40:
+        return err("이름은 1~40자여야 합니다.")
+    description = str(data.get("description", "")).strip()[:500]
+    category = str(data.get("category", "기타")).strip()[:20] or "기타"
+    sets = ["name = ?", "description = ?", "category = ?"]
+    params = [name, description, category]
+    if data.get("data") is not None:
+        try:
+            tpl = validate(data.get("data"))
+        except TemplateError as e:
+            return err(str(e))
+        data_json = json.dumps(tpl, separators=(",", ":"))
+        sets += ["size_x = ?", "size_y = ?", "size_z = ?", "block_count = ?", "data = ?"]
+        params += [*tpl["size"], len(tpl["blocks"]), data_json]
+        if thumbnail.available():  # 새 내용의 썸네일을 미리 그린다(캐시 키가 내용 해시라 옛 그림은 안 쓰임)
+            import threading
+
+            def render():
+                with RENDER_SLOTS:
+                    thumbnail.thumbnail_path(tid, data_json)
+            threading.Thread(target=render, daemon=True).start()
+    conn.execute(f"UPDATE templates SET {', '.join(sets)} WHERE id = ?", (*params, tid))
+    conn.commit()
+    return jsonify({"ok": True, "id": tid})
 
 
 @app.delete("/api/templates/<int:tid>")
@@ -977,6 +1029,74 @@ def withdraw(user):
     delete_account(conn, user["id"])
     session.clear()
     return jsonify({"ok": True, "rejoinAfterDays": REJOIN_WAIT // 86400})
+
+
+RESET_PER_HOUR = int(os.environ.get("RESET_PER_HOUR", 5))  # IP 하나당 1시간 재설정 요청 수
+
+
+def reset_hash(user_id, code):
+    return hmac.new(app.config["SECRET_KEY"].encode(), f"reset:{user_id}:{code}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+@app.post("/api/auth/reset/request")
+def reset_request():
+    """비밀번호 재설정 코드 메일. 가입 여부가 드러나지 않도록 응답은 항상 같다."""
+    email = str(body().get("email", "")).strip()
+    if len(email) > 254 or not EMAIL_RE.match(email):
+        return err("올바른 이메일 주소를 입력해 주세요.")
+    if not limiter.hit(("reset-ip", request.remote_addr), RESET_PER_HOUR, 3600):
+        return err("요청이 너무 많습니다. 1시간 뒤에 다시 시도해 주세요.", 429)
+    conn = db.get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE AND active = 1", (email,)).fetchone()
+    now = int(time.time())
+    if user and now - (user["reset_sent_at"] or 0) >= RESEND_GAP:
+        code = f"{secrets.randbelow(10**6):06d}"
+        try:
+            send_mail(user["email"], f"[블루프린트] 비밀번호 재설정 코드 {code}",
+                      f"비밀번호 재설정 코드예요.\n\n재설정 코드: {code}\n\n"
+                      f"아이디: {user['username']}\n"
+                      "비밀번호 재설정 화면에 위 6자리 코드와 새 비밀번호를 입력하세요. 코드는 30분 동안 유효합니다.\n\n"
+                      "직접 요청하지 않았다면 이 메일을 무시하세요. 비밀번호는 바뀌지 않아요.",
+                      html=RESET_MAIL_HTML.format(code=code, username=user["username"]))
+            conn.execute("UPDATE users SET reset_code_hash = ?, reset_sent_at = ?, reset_attempts = 0 WHERE id = ?",
+                         (reset_hash(user["id"], code), now, user["id"]))
+            conn.commit()
+        except Exception as e:
+            app.logger.error("재설정 메일 실패: %s", e)
+    return jsonify({"ok": True, "email": mask_email(email)})
+
+
+@app.post("/api/auth/reset/confirm")
+def reset_confirm():
+    data = body()
+    email = str(data.get("email", "")).strip()
+    code = str(data.get("code", "")).strip()
+    password = str(data.get("password", ""))
+    conn = db.get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE AND active = 1", (email,)).fetchone()
+    if user is None or not user["reset_code_hash"]:
+        return err("코드가 올바르지 않거나 만료됐어요. 새 코드를 받아 주세요.", 400)
+    if user["reset_attempts"] >= CODE_MAX_TRIES:
+        return err("코드를 너무 많이 틀렸어요. 새 코드를 받아 주세요.", 429)
+    if time.time() - (user["reset_sent_at"] or 0) > CODE_TTL:
+        return err("코드가 만료됐어요. 새 코드를 받아 주세요.", 410)
+    if not (re.fullmatch(r"\d{6}", code) and hmac.compare_digest(reset_hash(user["id"], code), user["reset_code_hash"])):
+        conn.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = ?", (user["id"],))
+        conn.commit()
+        left = CODE_MAX_TRIES - user["reset_attempts"] - 1
+        return err(f"코드가 맞지 않아요. {left}번 더 시도할 수 있어요." if left
+                   else "코드를 너무 많이 틀렸어요. 새 코드를 받아 주세요.", 400)
+    problem = password_problem(password, user["username"])
+    if problem:
+        return err(problem)
+    # 새 비밀번호로 바꾸고, 모든 기기의 옛 로그인을 끊는다. 메일을 받은 것이니 이메일 인증도 끝난 것으로 본다
+    conn.execute("UPDATE users SET password_hash = ?, session_ver = session_ver + 1, reset_code_hash = NULL,"
+                 " reset_attempts = 0, verified_at = COALESCE(verified_at, ?) WHERE id = ?",
+                 (generate_password_hash(password), int(time.time()), user["id"]))
+    conn.commit()
+    limiter.clear(("login-user", user["username"].lower()[:20]))
+    return jsonify({"ok": True, "username": user["username"]})
 
 
 @app.post("/api/auth/logout-all")
@@ -1295,7 +1415,7 @@ def plugin_upload(mc_uuid):
 PAGES = {"": "index.html", "login": "login.html", "register": "register.html",
          "library": "library.html", "upload": "upload.html", "template": "template.html",
          "profile": "profile.html", "admin": "admin.html", "terms": "terms.html",
-         "privacy": "privacy.html", "copyright": "copyright.html"}
+         "privacy": "privacy.html", "copyright": "copyright.html", "forgot": "forgot.html"}
 
 
 @app.get("/")

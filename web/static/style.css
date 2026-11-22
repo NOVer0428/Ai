@@ -296,3 +296,14 @@ footer.site p { margin: 4px 0; }
 footer.site .mc-notice { font-size: 12px; opacity: .85; }
 .terms ol { padding-left: 20px; }
 .terms h2.sub { margin: 18px 0 4px; font-size: 15px; }
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 6px; }
+.label-row label { margin: 0; white-space: nowrap; }
+.suggest-btn { padding: 4px 10px; font-size: 12px; }
+.edit-form { margin-top: 14px; border-color: var(--line); }
+.edit-form textarea { width: 100%; }
+
+/* 모든 페이지 배치를 같게: 스크롤바 자리를 항상 비워 두어 폭이 바뀌지 않게 하고,
+   내용이 짧은 페이지(로그인 등)도 아래쪽 사이트 정보가 화면 맨 아래에 오게 한다 */
+html { scrollbar-gutter: stable; }
+body { min-height: 100vh; display: flex; flex-direction: column; }
+body > main { flex: 1 0 auto; width: 100%; }

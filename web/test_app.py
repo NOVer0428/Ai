@@ -63,6 +63,55 @@ class FlowTest(unittest.TestCase):
         self.assertIn("아이디", reg("ruleuser1", "Rulesuer1!").json["error"])   # 비슷함
         self.assertEqual(reg("ruleuser1", "Sky#Lake71").status_code, 201)
 
+    def test_edit_template(self):
+        owner, other = app.test_client(), app.test_client()
+        self.c = owner; self.register("editor01")
+        self.c = other; self.register("stranger1")
+        d = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
+        tid = owner.post("/api/templates", json={"name": "첫 이름", "data": d}).json["id"]
+        self.assertTrue(owner.get(f"/api/templates/{tid}").json["canEdit"])
+        self.assertFalse(other.get(f"/api/templates/{tid}").json["canEdit"])
+        # 남은 못 고침, 기본 템플릿도 못 고침
+        self.assertEqual(other.put(f"/api/templates/{tid}", json={"name": "x"}).status_code, 403)
+        builtin = next(t for t in owner.get("/api/templates").json["templates"] if t["builtin"])
+        self.assertEqual(owner.put(f"/api/templates/{builtin['id']}", json={"name": "x"}).status_code, 403)
+        # 이름·분류·설명만
+        r = owner.put(f"/api/templates/{tid}", json={"name": "새 이름", "category": "장식", "description": "설명"})
+        self.assertEqual(r.status_code, 200)
+        t = owner.get(f"/api/templates/{tid}").json
+        self.assertEqual((t["name"], t["category"], t["description"], t["size"]), ("새 이름", "장식", "설명", [1, 1, 1]))
+        # 파일까지 교체
+        d2 = {"size": [2, 1, 1], "palette": ["minecraft:oak_planks"], "blocks": [[0, 0, 0, 0], [1, 0, 0, 0]]}
+        self.assertEqual(owner.put(f"/api/templates/{tid}", json={"name": "새 이름", "data": d2}).status_code, 200)
+        t = owner.get(f"/api/templates/{tid}").json
+        self.assertEqual((t["size"], t["blockCount"]), ([2, 1, 1], 2))
+        # 잘못된 내용은 거절
+        self.assertEqual(owner.put(f"/api/templates/{tid}", json={"name": "", "data": d2}).status_code, 400)
+        self.assertEqual(owner.put(f"/api/templates/{tid}", json={"name": "a", "data": {"size": [1]}}).status_code, 400)
+
+    def test_password_reset(self):
+        self.register("resetter1")
+        other = app.test_client()
+        other.post("/api/auth/login", json={"username": "resetter1", "password": "Sky#Lake71"})
+        # 없는 이메일도 같은 응답(가입 여부 노출 없음), 메일은 안 감
+        n = len(MAILS)
+        self.assertEqual(self.c.post("/api/auth/reset/request", json={"email": "nobody99@example.com"}).status_code, 200)
+        self.assertEqual(len(MAILS), n)
+        self.assertEqual(self.c.post("/api/auth/reset/request", json={"email": "resetter1@example.com"}).status_code, 200)
+        mail = MAILS[-1]
+        code = re.search(r"재설정 코드: (\d{6})", mail[2]).group(1)
+        self.assertIn("resetter1", mail[2])
+        confirm = lambda c, pw: self.c.post("/api/auth/reset/confirm",
+                                            json={"email": "resetter1@example.com", "code": c, "password": pw})
+        wrong = "000000" if code != "000000" else "111111"
+        self.assertEqual(confirm(wrong, "Moon@Rise33").status_code, 400)
+        self.assertEqual(confirm(code, "weakpass").status_code, 400)          # 새 비밀번호도 규칙 검사
+        r = confirm(code, "Moon@Rise33")
+        self.assertEqual(r.status_code, 200, r.json)
+        self.assertIsNone(other.get("/api/auth/me").json)                       # 다른 기기 로그인 끊김
+        self.assertEqual(confirm(code, "Moon@Rise34").status_code, 400)         # 코드는 한 번만
+        self.assertEqual(self.c.post("/api/auth/login", json={"username": "resetter1", "password": "Moon@Rise33"}).status_code, 200)
+
     def test_withdraw(self):
         me = self.register("leaver1")
         d = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}

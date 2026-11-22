@@ -112,6 +112,9 @@ USER_COLUMNS = {
     "terms_version": "TEXT",           # 가입할 때 동의한 약관 버전 (이 기능 전 가입자는 NULL)
     "terms_agreed_at": "INTEGER",
     "session_ver": "INTEGER NOT NULL DEFAULT 0",  # 올리면 그 전 로그인 쿠키가 모두 무효
+    "reset_code_hash": "TEXT",         # 비밀번호 재설정 6자리 코드의 HMAC (30분 유효)
+    "reset_sent_at": "INTEGER",
+    "reset_attempts": "INTEGER NOT NULL DEFAULT 0",
     "role": "TEXT",                    # 'sub_admin' = 부 관리자. 메인 관리자는 ADMIN_USERS 환경변수로 정한다             # 프로필 이미지 버전(올린 시각). NULL 이면 이미지 없음
     "link_key_id": "INTEGER REFERENCES server_keys(id) ON DELETE SET NULL",  # 어느 서버 키로 연동했는지
 }
