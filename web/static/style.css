@@ -306,6 +306,6 @@ body { min-height: 100vh; display: flex; flex-direction: column; }
 body > main { flex: 1 0 auto; width: 100%; }
 .pw-suggest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--ink-soft); }
 .pw-suggest .suggest-code { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--accent); background: none;
-  border: 0; border-bottom: 1.5px dashed var(--accent); padding: 0 2px; cursor: pointer; }
+  border: 0; padding: 0 2px; -webkit-user-select: text; user-select: text; }
 .pw-suggest .suggest-again { background: none; border: 0; color: var(--ink-soft); font-size: 16px; cursor: pointer; min-width: 28px; min-height: 28px; }
-.pw-suggest .suggest-again:hover, .pw-suggest .suggest-code:hover { color: var(--ink); }
+.pw-suggest .suggest-again:hover { color: var(--ink); }

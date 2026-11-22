@@ -4,7 +4,7 @@
 (() => {
   const editable = (node) => {
     const el = node?.nodeType === 3 ? node.parentElement : node;  // 글자 노드면 부모 요소로
-    return el?.closest?.("input, textarea, select, [contenteditable], .cmd, .link-code, .fresh-key .mono");
+    return el?.closest?.("input, textarea, select, [contenteditable], .cmd, .link-code, .fresh-key .mono, .suggest-code");
   };
   document.addEventListener("contextmenu", (e) => { if (!editable(e.target)) e.preventDefault(); });
   document.addEventListener("selectstart", (e) => { if (!editable(e.target)) e.preventDefault(); });
