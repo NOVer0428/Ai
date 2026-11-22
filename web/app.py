@@ -23,7 +23,30 @@ BASE = Path(__file__).parent
 INSTANCE = BASE / "instance"
 STATIC = BASE / "static"
 LINK_CODE_TTL = 10 * 60
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_가-힣]{3,20}$")
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_가-힣]{6,15}$")
+PASSWORD_SPECIALS = "!?/\|@#$%^&*"
+PASSWORD_RE = re.compile(r"^[A-Za-z0-9!?/\|@#$%^&*]{8,15}$")
+PASSWORD_RULE = "비밀번호는 8~15자이고 숫자, 영어 소문자, 영어 대문자, 특수문자(! ? / \ | @ # $ % ^ & *)를 모두 넣어야 해요."
+
+
+def password_problem(password, username):
+    """새 비밀번호 규칙 검사. 문제가 없으면 None, 있으면 안내 문구."""
+    if not PASSWORD_RE.match(password):
+        return PASSWORD_RULE
+    if not (re.search(r"\d", password) and re.search(r"[a-z]", password) and re.search(r"[A-Z]", password)
+            and any(c in PASSWORD_SPECIALS for c in password)):
+        return PASSWORD_RULE
+    # 아이디와 같거나 비슷하면 거절: 기호·숫자를 뺀 글자로 포함 관계와 유사도를 본다
+    from difflib import SequenceMatcher
+    core = lambda x: re.sub(r"[^a-z가-힣]", "", x.lower())
+    pw, uid = core(password), core(username)
+    pw_l, uid_l = password.lower(), username.lower()
+    if uid_l and (uid_l in pw_l or pw_l in uid_l or uid_l[::-1] in pw_l):
+        return "비밀번호에 아이디를 넣을 수 없어요."
+    if uid and pw and (uid in pw or pw in uid or SequenceMatcher(None, pw, uid).ratio() >= 0.6
+                       or SequenceMatcher(None, pw_l, uid_l).ratio() >= 0.6):
+        return "아이디와 비슷한 비밀번호는 쓸 수 없어요."
+    return None
 
 
 def load_secret(name, env):
@@ -361,11 +384,12 @@ def register():
     email = str(data.get("email", "")).strip()
     password = str(data.get("password", ""))
     if not USERNAME_RE.match(username):
-        return err("아이디는 3~20자의 영문, 숫자, 한글, _ 만 사용할 수 있습니다.")
+        return err("아이디는 6~15자의 영문, 숫자, 한글, _ 만 사용할 수 있습니다.")
     if len(email) > 254 or not EMAIL_RE.match(email):
         return err("올바른 이메일 주소를 입력해 주세요.")
-    if not 8 <= len(password) <= 128:
-        return err("비밀번호는 8자 이상이어야 합니다.")
+    problem = password_problem(password, username)
+    if problem:
+        return err(problem)
     if data.get("agreeTerms") is not True or data.get("agreePrivacy") is not True:
         return err("이용약관과 개인정보 수집·이용에 모두 동의해야 가입할 수 있어요.")
     if data.get("agreeAge") is not True:  # 만 14세 미만은 법정대리인 동의가 필요해 가입을 받지 않는다
@@ -911,8 +935,9 @@ def change_password(user):
     if not check_password_hash(user["password_hash"], str(data.get("current", ""))):
         return err("지금 비밀번호가 올바르지 않습니다.", 403)
     new = str(data.get("new", ""))
-    if not 8 <= len(new) <= 128:
-        return err("새 비밀번호는 8자 이상이어야 합니다.")
+    problem = password_problem(new, user["username"])
+    if problem:
+        return err(problem)
     conn = db.get_db()
     # 비밀번호를 바꾸면 다른 기기의 로그인은 모두 끊고, 지금 기기는 새 버전으로 유지한다
     conn.execute("UPDATE users SET password_hash = ?, session_ver = session_ver + 1 WHERE id = ?",

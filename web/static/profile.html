@@ -46,7 +46,8 @@
           <form class="panel" id="pwForm" hidden style="margin-bottom:20px;max-width:420px">
             <h2>비밀번호 변경</h2>
             <label for="cur">지금 비밀번호</label><input id="cur" type="password" autocomplete="current-password" required>
-            <label for="new1">새 비밀번호</label><input id="new1" type="password" autocomplete="new-password" required minlength="8">
+            <label for="new1">새 비밀번호</label><input id="new1" type="password" autocomplete="new-password" required minlength="8" maxlength="15">
+            <div class="hint">8~15자 · 숫자, 영어 소문자, 영어 대문자, 특수문자(! ? / \ | @ # $ % ^ &amp; *)를 모두 넣어 주세요 · 아이디와 같거나 비슷하면 안 돼요</div>
             <button class="btn primary" type="submit" style="margin-top:14px">바꾸기</button>
             <div class="error" id="pwErr"></div>
           </form>

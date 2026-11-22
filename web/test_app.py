@@ -8,7 +8,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 os.environ["PLUGIN_API_KEY"] = "test-key"
 os.environ.setdefault("SECRET_KEY", "test-secret")
-os.environ["ADMIN_USERS"] = "boss1"
+os.environ["ADMIN_USERS"] = "bossman1"
 os.environ["REGISTER_PER_HOUR"] = "100000"  # 테스트는 한 IP 에서 많이 가입한다
 os.environ["MAIL_PER_DAY"] = "100000"
 
@@ -45,11 +45,23 @@ class FlowTest(unittest.TestCase):
 
     def _register(self, name):
         email = f"{name}@example.com"
-        r = self.c.post("/api/auth/register", json={**{"username": name, "email": email, "password": "password123"}, **AGREE})
+        r = self.c.post("/api/auth/register", json={**{"username": name, "email": email, "password": "Sky#Lake71"}, **AGREE})
         self.assertEqual(r.status_code, 201, r.json)
         r = self.c.post("/api/auth/verify-code", json={"username": name, "code": mail_code(email)})
         self.assertEqual(r.status_code, 200, r.json)
         return self.c.get("/api/auth/me").json
+
+    def test_id_password_rules(self):
+        def reg(user, pw):
+            return self.c.post("/api/auth/register", json={"username": user, "email": f"{user}x@example.com",
+                                                           "password": pw, **AGREE})
+        self.assertEqual(reg("short", "Sky#Lake71").status_code, 400)            # 아이디 5자
+        self.assertEqual(reg("a" * 16, "Sky#Lake71").status_code, 400)          # 아이디 16자
+        for bad in ("sky#lake71", "SKY#LAKE71", "Sky#Lakeee", "SkyLake711", "Sk#1", "Sky#Lake71234567", "Sky Lake#1"):
+            self.assertEqual(reg("ruleuser1", bad).status_code, 400, bad)       # 조합·길이·허용 문자
+        self.assertIn("아이디", reg("ruleuser1", "Ruleuser1!").json["error"])   # 아이디를 그대로 넣음
+        self.assertIn("아이디", reg("ruleuser1", "Rulesuer1!").json["error"])   # 비슷함
+        self.assertEqual(reg("ruleuser1", "Sky#Lake71").status_code, 201)
 
     def test_withdraw(self):
         me = self.register("leaver1")
@@ -57,13 +69,13 @@ class FlowTest(unittest.TestCase):
         tid = self.c.post("/api/templates", json={"name": "떠날 집", "data": d}).json["id"]
         self.c.post("/api/servers")
         self.assertEqual(self.c.post("/api/account/delete", json={"password": "wrong"}).status_code, 403)
-        r = self.c.post("/api/account/delete", json={"password": "password123"})
+        r = self.c.post("/api/account/delete", json={"password": "Sky#Lake71"})
         self.assertEqual(r.status_code, 200)
         self.assertIsNone(self.c.get("/api/auth/me").json)                       # 로그아웃됨
         self.assertEqual(self.c.get(f"/api/templates/{tid}").status_code, 404)     # 템플릿도 지워짐
-        self.assertEqual(self.c.post("/api/auth/login", json={"username": "leaver1", "password": "password123"}).status_code, 401)
+        self.assertEqual(self.c.post("/api/auth/login", json={"username": "leaver1", "password": "Sky#Lake71"}).status_code, 401)
         # 같은 이메일은 7일 동안 재가입 불가, 아이디는 바로 다시 쓸 수 있음
-        again = {"username": "leaver2", "email": "LEAVER1@example.com", "password": "password123", **AGREE}
+        again = {"username": "leaver2", "email": "LEAVER1@example.com", "password": "Sky#Lake71", **AGREE}
         r = self.c.post("/api/auth/register", json=again)
         self.assertEqual(r.status_code, 409)
         self.assertIn("7일", r.json["error"])
@@ -73,10 +85,10 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.c.post("/api/auth/register", json=again).status_code, 201)
         # 메인 관리자는 탈퇴 불가
         boss = app.test_client()
-        if boss.post("/api/auth/login", json={"username": "boss1", "password": "password123"}).status_code != 200:
+        if boss.post("/api/auth/login", json={"username": "bossman1", "password": "Sky#Lake71"}).status_code != 200:
             self.c = boss
-            self.register("boss1")
-        self.assertEqual(boss.post("/api/account/delete", json={"password": "password123"}).status_code, 400)
+            self.register("bossman1")
+        self.assertEqual(boss.post("/api/account/delete", json={"password": "Sky#Lake71"}).status_code, 400)
 
     def test_security_fixes(self):
         # 보안 헤더
@@ -89,8 +101,8 @@ class FlowTest(unittest.TestCase):
         # 프록시 뒤 https 주소에서 온 같은 호스트 요청도 통과(스킴은 비교하지 않음)
         self.assertEqual(self.c.post("/api/auth/logout", headers={"Origin": "https://localhost"}).status_code, 200)
         # 관리자 아이디는 공개 가입 불가
-        r = self.c.post("/api/auth/register", json={"username": "Boss1", "email": "x1@example.com",
-                                                    "password": "password123", **AGREE})
+        r = self.c.post("/api/auth/register", json={"username": "Bossman1", "email": "x1@example.com",
+                                                    "password": "Sky#Lake71", **AGREE})
         self.assertEqual(r.status_code, 409)
         # 로그인 실패 기록: 아주 긴 아이디도 20자로 잘려 저장, 기록 수는 상한에서 정리된다
         lim = appmod.Limiter(); lim.MAX_KEYS = 50
@@ -100,12 +112,12 @@ class FlowTest(unittest.TestCase):
         self.c.post("/api/auth/login", json={"username": "z" * 5000, "password": "x"})
         self.assertFalse(any(k[0] == "login-user" and len(k[1]) > 20 for k in appmod.limiter.hits))
         # 세션 무효화: 비밀번호를 바꾸면 다른 기기 쿠키는 끊기고 지금 기기는 유지
-        self.register("sess1")
+        self.register("session1")
         other = app.test_client()
-        self.assertEqual(other.post("/api/auth/login", json={"username": "sess1", "password": "password123"}).status_code, 200)
-        self.c.post("/api/auth/password", json={"current": "password123", "new": "password456"})
+        self.assertEqual(other.post("/api/auth/login", json={"username": "session1", "password": "Sky#Lake71"}).status_code, 200)
+        self.c.post("/api/auth/password", json={"current": "Sky#Lake71", "new": "Sky#Lake72"})
         self.assertIsNone(other.get("/api/auth/me").json)
-        self.assertEqual(self.c.get("/api/auth/me").json["username"], "sess1")
+        self.assertEqual(self.c.get("/api/auth/me").json["username"], "session1")
         # 모든 기기에서 로그아웃
         self.c.post("/api/auth/logout-all")
         self.assertIsNone(self.c.get("/api/auth/me").json)
@@ -117,7 +129,7 @@ class FlowTest(unittest.TestCase):
         # 목록에는 블록 데이터가 실리지 않는다
         self.assertNotIn("data", self.c.get("/api/templates").json["templates"][0])
         # 업로드 속도 제한
-        self.c.post("/api/auth/login", json={"username": "sess1", "password": "password456"})
+        self.c.post("/api/auth/login", json={"username": "session1", "password": "Sky#Lake72"})
         old = appmod.UPLOADS_PER_HOUR; appmod.UPLOADS_PER_HOUR = 2
         try:
             d = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
@@ -134,7 +146,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(codes[10], 429)
 
     def test_terms_required(self):
-        body = {"username": "noterms1", "email": "noterms1@example.com", "password": "password123"}
+        body = {"username": "noterms1", "email": "noterms1@example.com", "password": "Sky#Lake71"}
         for agree in ({}, {"agreeTerms": True}, {"agreePrivacy": True}, {"agreeTerms": "yes", "agreePrivacy": True},
                       {"agreeTerms": True, "agreePrivacy": True}):  # 마지막: 만 14세 확인 없음
             r = self.c.post("/api/auth/register", json={**body, **agree})
@@ -146,20 +158,20 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(self.c.get(page).status_code, 200)
 
     def test_email_verification(self):
-        body = {"username": "mailuser1", "email": "mailuser1@example.com", "password": "password123"}
+        body = {"username": "mailuser1", "email": "mailuser1@example.com", "password": "Sky#Lake71"}
         r = self.c.post("/api/auth/register", json={**body, **AGREE})
         self.assertEqual(r.status_code, 201)
         self.assertIsNone(self.c.get("/api/auth/me").json)  # 인증 전에는 로그인 안 됨
-        login = {"username": "mailuser1", "password": "password123"}
+        login = {"username": "mailuser1", "password": "Sky#Lake71"}
         self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 403)
         # 잘못된 토큰
         self.assertIn("verify=invalid", self.c.get("/verify?token=bad").headers["Location"])
         # 같은 이메일로 또 가입: 가입 여부를 숨기려고 성공처럼 응답하지만 계정은 안 생기고 안내 메일만 간다
-        dup = {"username": "mailuser2", "email": "MailUser1@example.com", "password": "password123"}
+        dup = {"username": "mailuser2", "email": "MailUser1@example.com", "password": "Sky#Lake71"}
         self.assertEqual(self.c.post("/api/auth/register", json={**dup, **AGREE}).status_code, 201)
         self.assertIn("이미 가입된", MAILS[-1][1])
         self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "mailuser2", "code": "000000"}).status_code, 404)
-        bad = {"username": "mailuser3", "email": "not-an-email", "password": "password123"}
+        bad = {"username": "mailuser3", "email": "not-an-email", "password": "Sky#Lake71"}
         self.assertEqual(self.c.post("/api/auth/register", json={**bad, **AGREE}).status_code, 400)
         # 인증 후 로그인
         mail = next(m for m in reversed(MAILS) if m[0] == "mailuser1@example.com")
@@ -173,7 +185,7 @@ class FlowTest(unittest.TestCase):
     def test_remember_me(self):
         self.register("remember1")
         self.c.post("/api/auth/logout")
-        creds = {"username": "remember1", "password": "password123"}
+        creds = {"username": "remember1", "password": "Sky#Lake71"}
         r = self.c.post("/api/auth/login", json=creds)
         self.assertNotIn("Expires", r.headers["Set-Cookie"])  # 브라우저를 닫으면 끝나는 쿠키
         r = self.c.post("/api/auth/login", json={**creds, "remember": True})
@@ -210,7 +222,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.c.get(url).status_code, 404)
 
     def test_email_code(self):
-        body = {"username": "codeuser1", "email": "codeuser1@example.com", "password": "password123"}
+        body = {"username": "codeuser1", "email": "codeuser1@example.com", "password": "Sky#Lake71"}
         self.assertEqual(self.c.post("/api/auth/register", json={**body, **AGREE}).status_code, 201)
         code = mail_code("codeuser1@example.com")
         wrong = "000000" if code != "000000" else "111111"
@@ -218,7 +230,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("4번", r.json["error"])
         # 인증 전 로그인 → 코드 입력 화면용 정보
-        r = self.c.post("/api/auth/login", json={"username": "codeuser1", "password": "password123"})
+        r = self.c.post("/api/auth/login", json={"username": "codeuser1", "password": "Sky#Lake71"})
         self.assertEqual(r.status_code, 403)
         self.assertTrue(r.json["needsVerify"])
         r = self.c.post("/api/auth/verify-code", json={"username": "codeuser1", "code": code})
@@ -228,7 +240,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "codeuser1", "code": code}).status_code, 404)
 
         # 5번 틀리면 맞는 코드도 거절
-        body = {"username": "codeuser2", "email": "codeuser2@example.com", "password": "password123"}
+        body = {"username": "codeuser2", "email": "codeuser2@example.com", "password": "Sky#Lake71"}
         self.c.post("/api/auth/register", json={**body, **AGREE})
         code = mail_code("codeuser2@example.com")
         wrong = "000000" if code != "000000" else "111111"
@@ -239,9 +251,9 @@ class FlowTest(unittest.TestCase):
     def test_sub_admin(self):
         boss, sub, sub2, member = (app.test_client() for _ in range(4))
         # boss1(ADMIN_USERS)은 다른 테스트가 먼저 만들었을 수 있다 → 있으면 로그인
-        if boss.post("/api/auth/login", json={"username": "boss1", "password": "password123"}).status_code != 200:
+        if boss.post("/api/auth/login", json={"username": "bossman1", "password": "Sky#Lake71"}).status_code != 200:
             self.c = boss
-            self.register("boss1")
+            self.register("bossman1")
         for client, name in ((sub, "helper1"), (sub2, "helper2"), (member, "member1")):
             self.c = client
             self.register(name)
@@ -274,7 +286,7 @@ class FlowTest(unittest.TestCase):
 
     def test_admin_and_profile(self):
         boss, user, other = app.test_client(), app.test_client(), app.test_client()
-        for client, name in ((boss, "boss1"), (user, "writer1"), (other, "viewer1")):
+        for client, name in ((boss, "bossman1"), (user, "writer1"), (other, "viewer1")):
             self.c = client
             self.register(name)
         self.assertTrue(boss.get("/api/auth/me").json["isAdmin"])
@@ -311,7 +323,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual((row["uploadCount"], row["status"]), (1, "verified"))
         boss.post(f"/api/admin/users/{wid}/active", json={"active": False})
         self.assertIsNone(user.get("/api/auth/me").json)
-        r = user.post("/api/auth/login", json={"username": "writer1", "password": "password123"})
+        r = user.post("/api/auth/login", json={"username": "writer1", "password": "Sky#Lake71"})
         self.assertEqual(r.status_code, 403)
         # 관리자 자신은 비활성화·삭제 불가
         bid = boss.get("/api/auth/me").json["id"]
@@ -322,10 +334,10 @@ class FlowTest(unittest.TestCase):
         self.assertNotIn(tid, [t["id"] for t in boss.get("/api/admin/templates").json])
 
         # 비밀번호 변경
-        self.assertEqual(other.post("/api/auth/password", json={"current": "nope", "new": "newpass123"}).status_code, 403)
-        self.assertEqual(other.post("/api/auth/password", json={"current": "password123", "new": "newpass123"}).status_code, 200)
+        self.assertEqual(other.post("/api/auth/password", json={"current": "nope", "new": "Moon@Rise33"}).status_code, 403)
+        self.assertEqual(other.post("/api/auth/password", json={"current": "Sky#Lake71", "new": "Moon@Rise33"}).status_code, 200)
         other.post("/api/auth/logout")
-        self.assertEqual(other.post("/api/auth/login", json={"username": "viewer1", "password": "newpass123"}).status_code, 200)
+        self.assertEqual(other.post("/api/auth/login", json={"username": "viewer1", "password": "Moon@Rise33"}).status_code, 200)
 
     def test_servers_and_links(self):
         # 서버 주인 A 는 서버 2개, B 는 1개. 서버마다 키가 따로
@@ -459,11 +471,11 @@ class FlowTest(unittest.TestCase):
         self.register("builder3")
         self.c.post("/api/auth/logout")
         r = self.c.post("/api/auth/register",
-                        json={"username": "builder3", "email": "other3@example.com", "password": "password123", **AGREE})
+                        json={"username": "builder3", "email": "other3@example.com", "password": "Sky#Lake71", **AGREE})
         self.assertEqual(r.status_code, 409)
         r = self.c.post("/api/auth/login", json={"username": "builder3", "password": "wrongpass"})
         self.assertEqual(r.status_code, 401)
-        r = self.c.post("/api/auth/login", json={"username": "BUILDER3", "password": "password123"})
+        r = self.c.post("/api/auth/login", json={"username": "BUILDER3", "password": "Sky#Lake71"})
         self.assertEqual(r.status_code, 200)
 
     @unittest.skipUnless(__import__("thumbnail").available(), "블록 에셋 없음 (tools/fetch_assets.py)")
@@ -512,7 +524,7 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(self.c.post("/api/auth/login", json=bad).status_code, 401)
         self.assertEqual(self.c.post("/api/auth/login", json=bad).status_code, 429)
         # 막힌 동안에는 맞는 비밀번호도 거절
-        good = {"username": "ratelimit1", "password": "password123"}
+        good = {"username": "ratelimit1", "password": "Sky#Lake71"}
         self.assertEqual(self.c.post("/api/auth/login", json=good).status_code, 429)
 
     def test_form_post_rejected(self):
