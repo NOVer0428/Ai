@@ -44,6 +44,17 @@ const App = (() => {
       <div class="userbox"></div></div>`;
     el.querySelector(`[data-k="${active}"]`)?.classList.add("active");
     document.body.prepend(el);
+    // 모든 페이지 아래쪽: 약관·처리방침·저작권 링크와 마인크래프트 비공식 고지
+    if (!document.querySelector("footer.site")) {
+      const ft = document.createElement("footer");
+      ft.className = "site";
+      ft.innerHTML = `<div class="wrap">
+        <nav aria-label="사이트 정책"><a href="/terms">이용약관</a><a href="/privacy"><b>개인정보 처리방침</b></a><a href="/copyright">게시물·저작권 정책</a></nav>
+        <p>문의 modagi1222@gmail.com</p>
+        <p class="mc-notice">NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.<br>
+          블루프린트는 Minecraft 공식 제품이 아니며 Mojang·Microsoft와 관련이 없습니다.</p></div>`;
+      document.body.append(ft);
+    }
     passwordToggles();  // 로그인·회원가입처럼 처음부터 있는 비밀번호 칸
     const box = el.querySelector(".userbox");
     const user = await me().catch(() => null);

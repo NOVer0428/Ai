@@ -9,6 +9,8 @@ os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 os.environ["PLUGIN_API_KEY"] = "test-key"
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ["ADMIN_USERS"] = "boss1"
+os.environ["REGISTER_PER_HOUR"] = "100000"  # 테스트는 한 IP 에서 많이 가입한다
+os.environ["MAIL_PER_DAY"] = "100000"
 
 import re  # noqa: E402
 
@@ -17,7 +19,7 @@ from app import app  # noqa: E402
 
 PLUGIN = {"Authorization": "Bearer test-key"}
 appmod.AVATARS = __import__("pathlib").Path(_tmp) / "avatars"  # 테스트 사진은 임시 폴더에
-AGREE = {"agreeTerms": True, "agreePrivacy": True}
+AGREE = {"agreeTerms": True, "agreePrivacy": True, "agreeAge": True}
 MAILS = []  # (받는 사람, 제목, 글자 본문, HTML 본문)
 appmod.send_mail = lambda to, subject, text, html=None: MAILS.append((to, subject, text, html))
 
@@ -32,6 +34,16 @@ class FlowTest(unittest.TestCase):
         self.c = app.test_client()
 
     def register(self, name):
+        # 관리자 아이디는 공개 가입이 막혀 있으므로, 테스트에서는 "미리 만든 계정"처럼 잠깐 풀고 만든다
+        was_admin = name.lower() in appmod.ADMINS
+        appmod.ADMINS.discard(name.lower())
+        try:
+            return self._register(name)
+        finally:
+            if was_admin:
+                appmod.ADMINS.add(name.lower())
+
+    def _register(self, name):
         email = f"{name}@example.com"
         r = self.c.post("/api/auth/register", json={**{"username": name, "email": email, "password": "password123"}, **AGREE})
         self.assertEqual(r.status_code, 201, r.json)
@@ -39,14 +51,99 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.json)
         return self.c.get("/api/auth/me").json
 
+    def test_withdraw(self):
+        me = self.register("leaver1")
+        d = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
+        tid = self.c.post("/api/templates", json={"name": "떠날 집", "data": d}).json["id"]
+        self.c.post("/api/servers")
+        self.assertEqual(self.c.post("/api/account/delete", json={"password": "wrong"}).status_code, 403)
+        r = self.c.post("/api/account/delete", json={"password": "password123"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(self.c.get("/api/auth/me").json)                       # 로그아웃됨
+        self.assertEqual(self.c.get(f"/api/templates/{tid}").status_code, 404)     # 템플릿도 지워짐
+        self.assertEqual(self.c.post("/api/auth/login", json={"username": "leaver1", "password": "password123"}).status_code, 401)
+        # 같은 이메일은 7일 동안 재가입 불가, 아이디는 바로 다시 쓸 수 있음
+        again = {"username": "leaver2", "email": "LEAVER1@example.com", "password": "password123", **AGREE}
+        r = self.c.post("/api/auth/register", json=again)
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("7일", r.json["error"])
+        # 7일이 지나면 가능
+        conn = appmod.db.connect()
+        conn.execute("UPDATE withdrawn_emails SET until = 0"); conn.commit(); conn.close()
+        self.assertEqual(self.c.post("/api/auth/register", json=again).status_code, 201)
+        # 메인 관리자는 탈퇴 불가
+        boss = app.test_client()
+        if boss.post("/api/auth/login", json={"username": "boss1", "password": "password123"}).status_code != 200:
+            self.c = boss
+            self.register("boss1")
+        self.assertEqual(boss.post("/api/account/delete", json={"password": "password123"}).status_code, 400)
+
+    def test_security_fixes(self):
+        # 보안 헤더
+        r = self.c.get("/")
+        for h in ("Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy"):
+            self.assertIn(h, r.headers)
+        # 다른 사이트(Origin)에서 온 쓰기 요청 거절, 같은 사이트는 통과
+        self.assertEqual(self.c.post("/api/auth/logout", headers={"Origin": "https://evil.example"}).status_code, 403)
+        self.assertEqual(self.c.post("/api/auth/logout", headers={"Origin": "http://localhost"}).status_code, 200)
+        # 프록시 뒤 https 주소에서 온 같은 호스트 요청도 통과(스킴은 비교하지 않음)
+        self.assertEqual(self.c.post("/api/auth/logout", headers={"Origin": "https://localhost"}).status_code, 200)
+        # 관리자 아이디는 공개 가입 불가
+        r = self.c.post("/api/auth/register", json={"username": "Boss1", "email": "x1@example.com",
+                                                    "password": "password123", **AGREE})
+        self.assertEqual(r.status_code, 409)
+        # 로그인 실패 기록: 아주 긴 아이디도 20자로 잘려 저장, 기록 수는 상한에서 정리된다
+        lim = appmod.Limiter(); lim.MAX_KEYS = 50
+        for i in range(500):
+            lim.add(("login-user", f"u{i}"))
+        self.assertLessEqual(len(lim.hits), 50)
+        self.c.post("/api/auth/login", json={"username": "z" * 5000, "password": "x"})
+        self.assertFalse(any(k[0] == "login-user" and len(k[1]) > 20 for k in appmod.limiter.hits))
+        # 세션 무효화: 비밀번호를 바꾸면 다른 기기 쿠키는 끊기고 지금 기기는 유지
+        self.register("sess1")
+        other = app.test_client()
+        self.assertEqual(other.post("/api/auth/login", json={"username": "sess1", "password": "password123"}).status_code, 200)
+        self.c.post("/api/auth/password", json={"current": "password123", "new": "password456"})
+        self.assertIsNone(other.get("/api/auth/me").json)
+        self.assertEqual(self.c.get("/api/auth/me").json["username"], "sess1")
+        # 모든 기기에서 로그아웃
+        self.c.post("/api/auth/logout-all")
+        self.assertIsNone(self.c.get("/api/auth/me").json)
+        # 썸네일 maxY 는 높이 밖이면 전체 썸네일과 같은 파일(캐시가 무한히 늘지 않음)
+        if __import__("thumbnail").available():
+            t = self.c.get("/api/templates").json["templates"][0]
+            a = self.c.get(f"/api/templates/{t['id']}/thumbnail.png?maxY=999999"); b = self.c.get(f"/api/templates/{t['id']}/thumbnail.png")
+            self.assertEqual(a.data, b.data); a.close(); b.close()
+        # 목록에는 블록 데이터가 실리지 않는다
+        self.assertNotIn("data", self.c.get("/api/templates").json["templates"][0])
+        # 업로드 속도 제한
+        self.c.post("/api/auth/login", json={"username": "sess1", "password": "password456"})
+        old = appmod.UPLOADS_PER_HOUR; appmod.UPLOADS_PER_HOUR = 2
+        try:
+            d = {"size": [1, 1, 1], "palette": ["minecraft:stone"], "blocks": [[0, 0, 0, 0]]}
+            codes = [self.c.post("/api/templates", json={"name": f"s{i}", "data": d}).status_code for i in range(3)]
+            self.assertEqual(codes, [201, 201, 429])
+        finally:
+            appmod.UPLOADS_PER_HOUR = old
+        # 연동 코드: 서버 키 하나당 10번 틀리면 잠깐 막힘
+        key = self.c.post("/api/servers").json["key"]
+        hk = {"Authorization": f"Bearer {key}"}
+        codes = [self.c.post("/api/plugin/link", json={"code": "WRONG1", "uuid": str(uuid.uuid4()), "name": "x"},
+                             headers=hk).status_code for _ in range(11)]
+        self.assertEqual(codes[:10], [404] * 10)
+        self.assertEqual(codes[10], 429)
+
     def test_terms_required(self):
         body = {"username": "noterms1", "email": "noterms1@example.com", "password": "password123"}
-        for agree in ({}, {"agreeTerms": True}, {"agreePrivacy": True}, {"agreeTerms": "yes", "agreePrivacy": True}):
+        for agree in ({}, {"agreeTerms": True}, {"agreePrivacy": True}, {"agreeTerms": "yes", "agreePrivacy": True},
+                      {"agreeTerms": True, "agreePrivacy": True}):  # 마지막: 만 14세 확인 없음
             r = self.c.post("/api/auth/register", json={**body, **agree})
             self.assertEqual(r.status_code, 400, agree)
-            self.assertIn("동의", r.json["error"])
+            self.assertRegex(r.json["error"], "동의|14세")
         self.assertEqual(self.c.post("/api/auth/register", json={**body, **AGREE}).status_code, 201)
         self.assertEqual(self.c.get("/terms").status_code, 200)
+        for page in ("/privacy", "/copyright"):
+            self.assertEqual(self.c.get(page).status_code, 200)
 
     def test_email_verification(self):
         body = {"username": "mailuser1", "email": "mailuser1@example.com", "password": "password123"}
@@ -57,9 +154,11 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.c.post("/api/auth/login", json=login).status_code, 403)
         # 잘못된 토큰
         self.assertIn("verify=invalid", self.c.get("/verify?token=bad").headers["Location"])
-        # 같은 이메일로 또 가입 불가
+        # 같은 이메일로 또 가입: 가입 여부를 숨기려고 성공처럼 응답하지만 계정은 안 생기고 안내 메일만 간다
         dup = {"username": "mailuser2", "email": "MailUser1@example.com", "password": "password123"}
-        self.assertEqual(self.c.post("/api/auth/register", json={**dup, **AGREE}).status_code, 409)
+        self.assertEqual(self.c.post("/api/auth/register", json={**dup, **AGREE}).status_code, 201)
+        self.assertIn("이미 가입된", MAILS[-1][1])
+        self.assertEqual(self.c.post("/api/auth/verify-code", json={"username": "mailuser2", "code": "000000"}).status_code, 404)
         bad = {"username": "mailuser3", "email": "not-an-email", "password": "password123"}
         self.assertEqual(self.c.post("/api/auth/register", json={**bad, **AGREE}).status_code, 400)
         # 인증 후 로그인

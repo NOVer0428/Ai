@@ -68,10 +68,34 @@ def body():
 
 @app.before_request
 def require_json_for_writes():
-    # 쿠키 기반 API에 대한 간단한 CSRF 방어: 쓰기 요청은 JSON만 허용 (폼 전송으로는 보낼 수 없음)
+    # 쿠키 기반 API에 대한 CSRF 방어: 쓰기 요청은 JSON만 허용 (폼 전송으로는 보낼 수 없음)
     if request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/"):
         if request.content_length and not request.is_json:
             return err("Content-Type은 application/json이어야 합니다.", 415)
+        # 본문 없는 POST 도 막도록: 브라우저가 붙이는 Origin 이 이 사이트가 아니면 거절 (플러그인은 Origin 없음)
+        # 프록시 뒤에서는 내부 주소가 http 라서 스킴은 빼고 호스트만 비교한다
+        from urllib.parse import urlsplit
+        origin = request.headers.get("Origin")
+        if origin and urlsplit(origin).netloc.lower() != request.host.lower():
+            return err("다른 사이트에서 보낸 요청은 받을 수 없습니다.", 403)
+
+
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
+       "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
+       "form-action 'self'; frame-ancestors 'none'")
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("Content-Security-Policy", CSP)
+    resp.headers.setdefault("X-Frame-Options", "DENY")            # 클릭재킹 방지
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if app.config["SESSION_COOKIE_SECURE"]:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return resp
 
 
 # 관리자 아이디 목록 (쉼표로 구분, 대소문자 무시). 예: ADMIN_USERS=noha04
@@ -98,8 +122,9 @@ def current_user():
     uid = session.get("uid")
     if uid is None:
         return None
-    # 비활성화된 계정은 이미 로그인한 세션도 바로 끊긴다
-    return db.get_db().execute("SELECT * FROM users WHERE id = ? AND active = 1", (uid,)).fetchone()
+    # 비활성화된 계정, 비밀번호를 바꾸거나 "모든 기기에서 로그아웃" 한 뒤의 옛 쿠키는 바로 끊긴다
+    return db.get_db().execute("SELECT * FROM users WHERE id = ? AND active = 1 AND session_ver = ?",
+                               (uid, session.get("sv", 0))).fetchone()
 
 
 def can_see_template(row, user):
@@ -240,8 +265,10 @@ def template_summary(row, saved=None):
     return out
 
 
+TEMPLATE_COLS = ("t.id, t.name, t.description, t.category, t.author_id, t.size_x, t.size_y, t.size_z,"
+                 " t.block_count, t.created_at, t.active")
 TEMPLATE_SELECT = """
-SELECT t.*, u.username AS author,
+SELECT """ + TEMPLATE_COLS + """, u.username AS author,
        (SELECT COUNT(*) FROM library l WHERE l.template_id = t.id) AS saves
 FROM templates t LEFT JOIN users u ON u.id = t.author_id
 """
@@ -249,7 +276,7 @@ FROM templates t LEFT JOIN users u ON u.id = t.author_id
 
 # ---------------------------------------------------------------- auth
 
-TERMS_VERSION = "2026-11-16"  # static/terms.html 의 버전과 같게
+TERMS_VERSION = "2026-11-23"  # static/terms.html 의 버전과 같게
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
 VERIFY_TTL = 24 * 60 * 60
 RESEND_GAP = 3 * 60  # 남의 이메일로 가입해 로그인을 반복하는 메일 폭탄 완화 (24시간 뒤 미인증 가입은 삭제)
@@ -261,7 +288,11 @@ verify_tokens = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="email-ver
 def send_mail(to, subject, text, html=None):
     """MAIL_USER/MAIL_PASSWORD(Gmail 앱 비밀번호)가 있으면 SMTP로 보내고, 없으면 로그에 찍는다(개발용)."""
     user, password = os.environ.get("MAIL_USER"), os.environ.get("MAIL_PASSWORD")
+    if not limiter.hit(("mail",), MAIL_PER_DAY, 24 * 3600):
+        raise RuntimeError("오늘 보낼 수 있는 메일 수를 넘었습니다.")
     if not (user and password):
+        if app.config["SESSION_COOKIE_SECURE"]:  # 운영(HTTPS)에서는 인증 코드를 로그에 남기지 않는다
+            raise RuntimeError("MAIL_USER/MAIL_PASSWORD 가 설정되지 않았습니다.")
         print(f"[메일 미설정] 받는 사람 {to} / {subject}\n{text}", flush=True)
         return
     import smtplib
@@ -283,7 +314,8 @@ def send_mail(to, subject, text, html=None):
 
 
 def code_hash(user_id, code):
-    return hashlib.sha256(f"{user_id}:{code}".encode()).hexdigest()
+    # DB 가 새어도 6자리 코드를 바로 대입해 볼 수 없게 서버 비밀키로 HMAC
+    return hmac.new(app.config["SECRET_KEY"].encode(), f"{user_id}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
 VERIFY_MAIL_HTML = """<!doctype html>
@@ -314,6 +346,7 @@ def log_in(user, remember=False):
     session.clear()
     session.permanent = remember
     session["uid"] = user["id"]
+    session["sv"] = user["session_ver"]
 
 
 def mask_email(email):
@@ -335,15 +368,38 @@ def register():
         return err("비밀번호는 8자 이상이어야 합니다.")
     if data.get("agreeTerms") is not True or data.get("agreePrivacy") is not True:
         return err("이용약관과 개인정보 수집·이용에 모두 동의해야 가입할 수 있어요.")
+    if data.get("agreeAge") is not True:  # 만 14세 미만은 법정대리인 동의가 필요해 가입을 받지 않는다
+        return err("만 14세 이상만 가입할 수 있어요.")
+    if username.lower() in ADMINS:  # 관리자 아이디는 미리 만든 계정만 쓴다(선점 방지)
+        return err("이미 사용 중인 아이디입니다.", 409)
+    if not limiter.hit(("register-ip", request.remote_addr), REGISTER_PER_HOUR, 3600):
+        return err("가입 신청이 너무 많습니다. 1시간 뒤에 다시 시도해 주세요.", 429)
     conn = db.get_db()
     # 링크 유효시간이 지나도록 인증하지 않은 가입은 지워서 아이디·이메일을 다시 쓸 수 있게 한다
     conn.execute("DELETE FROM users WHERE email IS NOT NULL AND verified_at IS NULL AND created_at < ?",
                  (int(time.time()) - VERIFY_TTL,))
+    conn.commit()  # 아래에서 메일을 보내는 동안 DB 쓰기 잠금을 붙잡지 않게 바로 끝낸다
     taken = conn.execute("SELECT username = ? COLLATE NOCASE FROM users"
                          " WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE",
                          (username, username, email)).fetchone()
+    if taken and taken[0]:
+        return err("이미 사용 중인 아이디입니다.", 409)
+    conn.execute("DELETE FROM withdrawn_emails WHERE until <= ?", (int(time.time()),))
+    conn.commit()
+    held = conn.execute("SELECT until FROM withdrawn_emails WHERE email_hash = ?", (email_hash(email),)).fetchone()
+    if held:
+        days = max(1, -(-(held["until"] - int(time.time())) // 86400))
+        return err(f"탈퇴한 이메일은 탈퇴 7일 뒤부터 다시 가입할 수 있어요. ({days}일 남음)", 409)
     if taken:
-        return err("이미 사용 중인 아이디입니다." if taken[0] else "이미 가입된 이메일입니다.", 409)
+        # 이메일이 이미 가입돼 있어도 성공과 같은 응답을 준다(가입 여부 노출 방지). 그 주소로는 안내 메일만 보낸다
+        try:
+            send_mail(email, "[블루프린트] 이미 가입된 이메일이에요",
+                      "이 이메일로 이미 가입된 계정이 있어서 새 가입은 진행되지 않았어요.\n"
+                      "비밀번호가 기억나지 않으면 관리자에게 문의해 주세요.\n\n"
+                      "직접 가입하지 않았다면 이 메일을 무시하세요.")
+        except Exception as e:
+            app.logger.error("중복 가입 안내 메일 실패: %s", e)
+        return jsonify({"verify": True, "email": mask_email(email)}), 201
     try:
         cur = conn.execute(
             "INSERT INTO users (username, email, password_hash, created_at, terms_version, terms_agreed_at)"
@@ -410,16 +466,58 @@ def verify_code():
     return jsonify(user_json(current_user()))
 
 
-# shortcut: 실패 기록을 프로세스 메모리에 둔다(재시작하면 초기화, 워커 1개 기준). 워커를 늘리면 DB로 옮긴다.
+class Limiter:
+    """키별로 최근 시각을 세는 간단한 횟수 제한.
+    shortcut: 프로세스 메모리에 둔다(재시작하면 초기화, 워커 1개 기준). 워커를 늘리면 DB로 옮긴다.
+    키 수가 MAX_KEYS 를 넘으면 기한이 지난 키를 지우고, 그래도 많으면 가장 오래된 절반을 버려 메모리가 무한히 늘지 않는다."""
+    MAX_KEYS = 20000
+
+    def __init__(self):
+        self.hits = {}
+
+    def count(self, key, window, now=None):
+        now = now or time.time()
+        times = [t for t in self.hits.get(key, ()) if now - t < window]
+        if times:
+            self.hits[key] = times
+        else:
+            self.hits.pop(key, None)
+        return len(times)
+
+    def add(self, key, now=None):
+        if len(self.hits) >= self.MAX_KEYS:
+            self._prune()
+        self.hits.setdefault(key, []).append(now or time.time())
+
+    def hit(self, key, limit, window):
+        """한도 안이면 기록하고 True, 넘었으면 False."""
+        if self.count(key, window) >= limit:
+            return False
+        self.add(key)
+        return True
+
+    def clear(self, key):
+        self.hits.pop(key, None)
+
+    def _prune(self):
+        now = time.time()
+        for k in [k for k, v in self.hits.items() if not v or now - v[-1] > 24 * 3600]:
+            del self.hits[k]
+        if len(self.hits) >= self.MAX_KEYS:
+            for k in sorted(self.hits, key=lambda k: self.hits[k][-1])[: len(self.hits) // 2]:
+                del self.hits[k]
+
+
+limiter = Limiter()
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILS = {"ip": 20, "user": 5}
-_login_fails = {}
+REGISTER_PER_HOUR = int(os.environ.get("REGISTER_PER_HOUR", 5))    # IP 하나당 1시간에 가입 신청 수
+MAIL_PER_DAY = int(os.environ.get("MAIL_PER_DAY", 300))           # 사이트 전체 하루 발송 한도 (Gmail 한도 500 아래)
+LINK_FAILS_PER_10MIN = 10                                         # 서버 키 하나당 틀린 연동 코드 허용 수
+UPLOADS_PER_HOUR = int(os.environ.get("UPLOADS_PER_HOUR", 20))
+UPLOADS_MAX = int(os.environ.get("UPLOADS_MAX", 200))             # 회원 한 명이 올릴 수 있는 템플릿 수
 
 
-def _recent_fails(key, now):
-    times = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW]
-    _login_fails[key] = times
-    return times
 
 
 @app.post("/api/auth/login")
@@ -427,15 +525,17 @@ def login():
     data = body()
     username = str(data.get("username", "")).strip()
     now = time.time()
-    keys = {"ip": ("ip", request.remote_addr), "user": ("user", username.lower())}
-    if any(len(_recent_fails(k, now)) >= LOGIN_MAX_FAILS[kind] for kind, k in keys.items()):
+    # 아이디 키는 20자로 자른다(긴 아이디로 메모리를 채우는 것 방지)
+    keys = {"ip": ("login-ip", request.remote_addr), "user": ("login-user", username.lower()[:20])}
+    if any(limiter.count(k, LOGIN_WINDOW, now) >= LOGIN_MAX_FAILS[kind] for kind, k in keys.items()):
         return err("로그인 시도가 너무 많습니다. 10분 뒤에 다시 시도해 주세요.", 429)
-    user = db.get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if user is None or not check_password_hash(user["password_hash"], str(data.get("password", ""))):
+    user = len(username) <= 20 and db.get_db().execute(
+        "SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    if not user or not check_password_hash(user["password_hash"], str(data.get("password", ""))):
         for k in keys.values():
-            _login_fails[k].append(now)
+            limiter.add(k, now)
         return err("아이디 또는 비밀번호가 올바르지 않습니다.", 401)
-    _login_fails.pop(keys["user"], None)
+    limiter.clear(keys["user"])
     if not user["active"]:
         return err("관리자가 비활성화한 계정입니다.", 403)
     if user["email"] and user["verified_at"] is None:
@@ -483,6 +583,7 @@ def list_templates():
         params.append(category)
     sort = request.args.get("sort", "new")
     sql += " ORDER BY saves DESC, t.id DESC" if sort == "popular" else " ORDER BY t.id DESC"
+    sql += " LIMIT 500"  # 한 번에 보내는 목록 상한
     conn = db.get_db()
     rows = conn.execute(sql, params).fetchall()
     user = current_user()
@@ -500,7 +601,8 @@ def list_templates():
 
 @app.get("/api/templates/<int:tid>")
 def get_template(tid):
-    row = db.get_db().execute(TEMPLATE_SELECT + " WHERE t.id = ?", (tid,)).fetchone()
+    row = db.get_db().execute(TEMPLATE_SELECT.replace(TEMPLATE_COLS, TEMPLATE_COLS + ", t.data", 1)
+                              + " WHERE t.id = ?", (tid,)).fetchone()
     user = current_user()
     if row is None or not can_see_template(row, user):
         return err("템플릿을 찾을 수 없습니다.", 404)
@@ -521,11 +623,14 @@ def template_thumbnail(tid):
     """실제 블록 텍스처로 그린 썸네일. ?rot=0~3 (보는 방향), ?maxY= (그 높이까지만)"""
     if not thumbnail.available():
         return err("썸네일용 블록 에셋이 없습니다. tools/fetch_assets.py 를 실행하세요.", 404)
-    row = db.get_db().execute("SELECT data, active, author_id FROM templates WHERE id = ?", (tid,)).fetchone()
+    row = db.get_db().execute("SELECT data, active, author_id, size_y FROM templates WHERE id = ?",
+                              (tid,)).fetchone()
     if row is None or not can_see_template(row, current_user()):
         return err("템플릿을 찾을 수 없습니다.", 404)
     rot = request.args.get("rot", 0, type=int) % 4
     max_y = request.args.get("maxY", type=int)
+    if max_y is not None and not 0 <= max_y < row["size_y"]:  # 0 = 첫 층만
+        max_y = None
     path = thumbnail.thumbnail_path(tid, row["data"], rot, max_y)
     resp = send_file(path, mimetype="image/png", conditional=True, max_age=0)
     resp.headers["Cache-Control"] = "no-cache"
@@ -586,6 +691,9 @@ def create_template(user):
     return insert_template(user, body())
 
 
+RENDER_SLOTS = __import__("threading").BoundedSemaphore(2)
+
+
 def insert_template(user, data):
     name = str(data.get("name", "")).strip()
     if not 1 <= len(name) <= 40:
@@ -597,6 +705,13 @@ def insert_template(user, data):
     except TemplateError as e:
         return err(str(e))
     conn = db.get_db()
+    total, recent = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(created_at > ?), 0) FROM templates WHERE author_id = ?",
+        (int(time.time()) - 3600, user["id"])).fetchone()
+    if total >= UPLOADS_MAX:
+        return err(f"템플릿은 한 사람당 {UPLOADS_MAX}개까지 올릴 수 있어요. 안 쓰는 템플릿을 지워 주세요.", 400)
+    if recent >= UPLOADS_PER_HOUR:
+        return err("업로드가 너무 많습니다. 1시간 뒤에 다시 시도해 주세요.", 429)
     cur = conn.execute(
         "INSERT INTO templates (name, description, category, author_id, size_x, size_y, size_z,"
         " block_count, data, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -609,8 +724,10 @@ def insert_template(user, data):
     conn.commit()
     if thumbnail.available():
         import threading
-        threading.Thread(target=thumbnail.thumbnail_path,
-                         args=(cur.lastrowid, json.dumps(tpl, separators=(",", ":"))), daemon=True).start()
+        def render(tid=cur.lastrowid, data_json=json.dumps(tpl, separators=(",", ":"))):
+            with RENDER_SLOTS:  # 업로드가 몰려도 미리 그리기는 동시에 2개까지
+                thumbnail.thumbnail_path(tid, data_json)
+        threading.Thread(target=render, daemon=True).start()
     return jsonify({"id": cur.lastrowid}), 201
 
 
@@ -797,8 +914,54 @@ def change_password(user):
     if not 8 <= len(new) <= 128:
         return err("새 비밀번호는 8자 이상이어야 합니다.")
     conn = db.get_db()
-    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(new), user["id"]))
+    # 비밀번호를 바꾸면 다른 기기의 로그인은 모두 끊고, 지금 기기는 새 버전으로 유지한다
+    conn.execute("UPDATE users SET password_hash = ?, session_ver = session_ver + 1 WHERE id = ?",
+                 (generate_password_hash(new), user["id"]))
     conn.commit()
+    session["sv"] = user["session_ver"] + 1
+    return jsonify({"ok": True})
+
+
+REJOIN_WAIT = 7 * 24 * 3600  # 탈퇴한 이메일은 7일 뒤부터 다시 가입할 수 있다
+
+
+def email_hash(email):
+    return hmac.new(app.config["SECRET_KEY"].encode(), email.strip().lower().encode(), hashlib.sha256).hexdigest()
+
+
+def delete_account(conn, uid):
+    """계정과 그 회원의 템플릿·보관함·서버·연동·사진을 지운다. 템플릿을 남기면 작성자가 비어 기본 템플릿으로 오인된다."""
+    conn.execute("DELETE FROM templates WHERE author_id = ?", (uid,))
+    conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+    conn.commit()
+    avatar_file(uid).unlink(missing_ok=True)
+
+
+@app.post("/api/account/delete")
+@login_required
+def withdraw(user):
+    """회원 탈퇴. 비밀번호를 다시 확인한다. 이메일은 7일 동안 재가입에 쓸 수 없다."""
+    if is_admin(user):
+        return err("메인 관리자 계정은 탈퇴할 수 없어요. ADMIN_USERS 설정에서 먼저 빼 주세요.", 400)
+    if not check_password_hash(user["password_hash"], str(body().get("password", ""))):
+        return err("비밀번호가 올바르지 않습니다.", 403)
+    conn = db.get_db()
+    if user["email"]:
+        conn.execute("INSERT OR REPLACE INTO withdrawn_emails (email_hash, until) VALUES (?, ?)",
+                     (email_hash(user["email"]), int(time.time()) + REJOIN_WAIT))
+    delete_account(conn, user["id"])
+    session.clear()
+    return jsonify({"ok": True, "rejoinAfterDays": REJOIN_WAIT // 86400})
+
+
+@app.post("/api/auth/logout-all")
+@login_required
+def logout_all(user):
+    """모든 기기(이 기기 포함)에서 로그아웃. 훔친 쿠키도 이 순간부터 못 쓴다."""
+    conn = db.get_db()
+    conn.execute("UPDATE users SET session_ver = session_ver + 1 WHERE id = ?", (user["id"],))
+    conn.commit()
+    session.clear()
     return jsonify({"ok": True})
 
 
@@ -947,10 +1110,7 @@ def admin_user_delete(admin, uid):
     if is_admin(target):
         return err("관리자 계정은 삭제할 수 없습니다.", 400)
     # 작성자가 비면 기본 템플릿(author_id NULL)으로 오인되어 서버 재시작 때 지워지므로 함께 삭제한다
-    conn.execute("DELETE FROM templates WHERE author_id = ?", (uid,))
-    conn.execute("DELETE FROM users WHERE id = ?", (uid,))
-    conn.commit()
-    avatar_file(uid).unlink(missing_ok=True)
+    delete_account(conn, uid)
     return jsonify({"ok": True})
 
 
@@ -1022,12 +1182,15 @@ def plugin_link():
     code = str(data.get("code", "")).strip().upper()
     mc_uuid = parse_uuid(data.get("uuid"))
     mc_name = str(data.get("name", ""))[:16]
+    if limiter.count(("link-fail", g.server_id), 600) >= LINK_FAILS_PER_10MIN:
+        return err("연동 코드를 너무 많이 틀렸습니다. 10분 뒤에 다시 시도해 주세요.", 429)
     conn = db.get_db()
     # 조회와 소비를 한 문장으로: 같은 코드로 동시에 두 번 요청해도 한 번만 성공한다
     row = conn.execute("DELETE FROM link_codes WHERE code = ? AND expires_at >= ? RETURNING user_id",
                        (code, int(time.time()))).fetchone()
     if row is None:
         conn.commit()
+        limiter.add(("link-fail", g.server_id))
         return err("연동 코드가 없거나 만료되었습니다. 웹사이트에서 새 코드를 발급받으세요.", 404)
     # 이 서버에서 같은 마인크래프트 계정이 다른 웹 계정에 연결돼 있었다면 그 연동을 넘겨받는다
     conn.execute("DELETE FROM server_links WHERE server_id = ? AND mc_uuid = ?", (g.server_id, mc_uuid))
@@ -1106,7 +1269,8 @@ def plugin_upload(mc_uuid):
 
 PAGES = {"": "index.html", "login": "login.html", "register": "register.html",
          "library": "library.html", "upload": "upload.html", "template": "template.html",
-         "profile": "profile.html", "admin": "admin.html", "terms": "terms.html"}
+         "profile": "profile.html", "admin": "admin.html", "terms": "terms.html",
+         "privacy": "privacy.html", "copyright": "copyright.html"}
 
 
 @app.get("/")

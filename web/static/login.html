@@ -31,7 +31,7 @@
     const safeNext = (() => {
       try {
         const u = new URL(new URLSearchParams(location.search).get("next") || "/", location.origin);
-        return u.origin === location.origin ? u.pathname + u.search : "/";
+        return u.origin === location.origin ? u.href : "/";  // 경로만 다시 쓰면 //외부주소 로 빠져나갈 수 있어 전체 주소를 쓴다
       } catch { return "/"; }
     })();
     if (new URLSearchParams(location.search).get("verify") === "invalid") {

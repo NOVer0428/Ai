@@ -281,3 +281,18 @@ img, svg, canvas { -webkit-user-drag: none; user-drag: none; }
 .terms-table th, .terms-table td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
 .terms-table th { color: var(--ink-soft); font-weight: 500; }
 .terms .panel { overflow-x: auto; }
+
+/* 회원 탈퇴 */
+.danger-zone { margin-top: 28px; border-color: var(--danger); }
+.danger-zone .agree-line { display: flex; align-items: center; gap: 8px; font-weight: 500; margin-top: 12px; cursor: pointer; }
+.danger-zone .agree-line input { width: 18px; height: 18px; margin: 0; accent-color: var(--danger); }
+
+/* 아래쪽: 정책 링크와 마인크래프트 비공식 고지 */
+footer.site { border-top: 2px solid var(--line); margin-top: 48px; padding: 20px 0 32px; font-size: 13px; color: var(--ink-soft); }
+footer.site nav { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+footer.site a { color: var(--ink-soft); }
+footer.site a:hover { color: var(--ink); }
+footer.site p { margin: 4px 0; }
+footer.site .mc-notice { font-size: 12px; opacity: .85; }
+.terms ol { padding-left: 20px; }
+.terms h2.sub { margin: 18px 0 4px; font-size: 15px; }

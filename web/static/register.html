@@ -29,7 +29,8 @@
           <a href="/terms#service" target="_blank" rel="noopener">보기</a></label>
         <label><input type="checkbox" id="agreePrivacy" required> <span>[필수] 개인정보 수집·이용 동의</span>
           <a href="/terms#privacy" target="_blank" rel="noopener">보기</a></label>
-        <p class="hint">수집 항목: 아이디, 이메일, 비밀번호(암호화) · 목적: 회원 관리·인증 · 보유: 탈퇴할 때까지. 동의하지 않으면 가입할 수 없어요.</p>
+        <label><input type="checkbox" id="agreeAge" required> <span>[필수] 만 14세 이상입니다</span></label>
+        <p class="hint">수집 항목: 아이디, 이메일, 비밀번호(암호화) · 목적: 회원 관리·인증 · 보유: 탈퇴할 때까지. 동의하지 않으면 가입할 수 없어요. 만 14세 미만은 가입할 수 없어요. <a href="/privacy" target="_blank" rel="noopener">개인정보 처리방침</a></p>
       </fieldset>
       <button class="btn primary" type="submit">가입하기</button>
       <div class="error" id="error"></div>
@@ -40,7 +41,7 @@
     App.header();
     // 전체 동의 ↔ 개별 동의 체크 맞추기
     const agreeAll = document.getElementById("agreeAll");
-    const agreeEach = [document.getElementById("agreeTerms"), document.getElementById("agreePrivacy")];
+    const agreeEach = ["agreeTerms", "agreePrivacy", "agreeAge"].map((id) => document.getElementById(id));
     agreeAll.onchange = () => agreeEach.forEach((c) => { c.checked = agreeAll.checked; });
     agreeEach.forEach((c) => c.onchange = () => { agreeAll.checked = agreeEach.every((x) => x.checked); });
     document.getElementById("form").onsubmit = async (e) => {
@@ -57,6 +58,7 @@
           email: document.getElementById("email").value, password,
           agreeTerms: document.getElementById("agreeTerms").checked,
           agreePrivacy: document.getElementById("agreePrivacy").checked,
+          agreeAge: document.getElementById("agreeAge").checked,
         }});
         App.verifyForm(document.getElementById("form"),
           { username: document.getElementById("username").value.trim(), email: r.email, password });

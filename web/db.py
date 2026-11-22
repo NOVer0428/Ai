@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS server_keys (
     prefix     TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+-- 탈퇴한 이메일: 원문 대신 서버 비밀키 HMAC 만 두고, until 까지 같은 이메일로 재가입을 막는다
+CREATE TABLE IF NOT EXISTS withdrawn_emails (
+    email_hash TEXT PRIMARY KEY,
+    until      INTEGER NOT NULL
+);
 -- 마인크래프트 서버. 회원은 여러 서버를 등록할 수 있고 서버마다 키가 다르다.
 -- is_operator=1 은 사이트 운영자 키(plugin_api_key.txt)용 서버 한 줄 (owner·key_hash 없음)
 CREATE TABLE IF NOT EXISTS servers (
@@ -106,6 +111,7 @@ USER_COLUMNS = {
     "avatar_ver": "INTEGER",
     "terms_version": "TEXT",           # 가입할 때 동의한 약관 버전 (이 기능 전 가입자는 NULL)
     "terms_agreed_at": "INTEGER",
+    "session_ver": "INTEGER NOT NULL DEFAULT 0",  # 올리면 그 전 로그인 쿠키가 모두 무효
     "role": "TEXT",                    # 'sub_admin' = 부 관리자. 메인 관리자는 ADMIN_USERS 환경변수로 정한다             # 프로필 이미지 버전(올린 시각). NULL 이면 이미지 없음
     "link_key_id": "INTEGER REFERENCES server_keys(id) ON DELETE SET NULL",  # 어느 서버 키로 연동했는지
 }
