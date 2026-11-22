@@ -24,9 +24,9 @@ INSTANCE = BASE / "instance"
 STATIC = BASE / "static"
 LINK_CODE_TTL = 10 * 60
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_가-힣]{6,15}$")
-PASSWORD_SPECIALS = "!?/\|@#$%^&*"
-PASSWORD_RE = re.compile(r"^[A-Za-z0-9!?/\|@#$%^&*]{8,15}$")
-PASSWORD_RULE = "비밀번호는 8~15자이고 숫자, 영어 소문자, 영어 대문자, 특수문자(! ? / \ | @ # $ % ^ & *)를 모두 넣어야 해요."
+PASSWORD_SPECIALS = r"!?/\|@#$%^&*"
+PASSWORD_RE = re.compile(r"^[A-Za-z0-9!?/\\|@#$%^&*]{8,15}$")  # \\ = 역슬래시 자체
+PASSWORD_RULE = "비밀번호는 8~15자이고 숫자, 영어 소문자, 영어 대문자, 특수문자(! ? / \\ | @ # $ % ^ & *)를 모두 넣어야 해요."
 
 
 def password_problem(password, username):
