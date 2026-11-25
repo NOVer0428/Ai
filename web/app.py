@@ -103,7 +103,7 @@ def require_json_for_writes():
             return err("다른 사이트에서 보낸 요청은 받을 수 없습니다.", 403)
 
 
-CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+CSP = ("default-src 'self'; script-src 'self'; "  # 인라인 스크립트 금지: 페이지 스크립트는 static/page-*.js
        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
        "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
        "form-action 'self'; frame-ancestors 'none'")

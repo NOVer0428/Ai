@@ -233,9 +233,17 @@ const App = (() => {
   // 실제 블록 텍스처 썸네일 (서버 렌더링). 에셋이 없거나 실패하면 단순 미리보기 캔버스로 대체
   function thumbHTML(t) {
     if (!t.thumbnail) return `<canvas data-preview="${t.id}"></canvas>`;
-    return `<img class="thumb" src="${t.thumbnail}" alt="${esc(t.name)} 미리보기" loading="lazy"
-      onerror="this.outerHTML='<canvas data-preview=&quot;${t.id}&quot;></canvas>'; App.observePreviews(document)">`;
+    return `<img class="thumb" src="${t.thumbnail}" alt="${esc(t.name)} 미리보기" loading="lazy" data-fallback="${t.id}">`;
   }
+  // 썸네일을 못 불러오면 캔버스 미리보기로 바꾼다. CSP 가 인라인 onerror 를 막으므로 문서 전체에서 한 번에 받는다
+  document.addEventListener("error", (e) => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.fallback) return;
+    const canvas = document.createElement("canvas");
+    canvas.dataset.preview = img.dataset.fallback;
+    img.replaceWith(canvas);
+    observePreviews(document);
+  }, true);
 
   function saveButton(t) {
     return t.saved

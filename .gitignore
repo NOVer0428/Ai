@@ -8,3 +8,9 @@ plugin/.gradle/
 plugin/build/
 .idea/
 *.iml
+
+# 비밀값 (키·비밀번호) 파일은 절대 올리지 않는다
+.env
+.env.*
+*.env
+*.pem
